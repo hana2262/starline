@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { getDb, createProjectRepository, createAssetRepository } from "@starline/storage";
+import { getDb, getSqlite, createProjectRepository, createAssetRepository } from "@starline/storage";
 import { createProjectService, createAssetService, AssetImportError, computeFileHash } from "@starline/domain";
 import { runMigrations } from "@starline/storage/src/migrate.js";
 import { registerProjectRoutes } from "./routes/projects.js";
@@ -10,12 +10,13 @@ export function buildServer(dbPath: string) {
 
   // Run migrations and wire dependencies
   runMigrations(dbPath);
-  const db = getDb(dbPath);
+  const db     = getDb(dbPath);
+  const sqlite = getSqlite();
 
   const projectRepo = createProjectRepository(db);
   const projectService = createProjectService(projectRepo);
 
-  const assetRepo = createAssetRepository(db);
+  const assetRepo = createAssetRepository(db, sqlite);
   const assetService = createAssetService(assetRepo, computeFileHash);
 
   // Health check

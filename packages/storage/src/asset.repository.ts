@@ -1,4 +1,5 @@
-import { eq } from "drizzle-orm";
+import { eq, and, inArray, desc, sql, like, or } from "drizzle-orm";
+import type Database from "better-sqlite3";
 import { randomUUID } from "crypto";
 import type { Db } from "./db.js";
 import { assets } from "./schema.js";
@@ -21,17 +22,22 @@ function deserializeTags(raw: string): string[] {
   }
 }
 
-function hydrate(row: Asset): Asset & { tags: string } {
-  return row;
-}
-
 export type AssetRow = Omit<Asset, "tags"> & { tags: string[] };
 
 function toAssetRow(row: Asset): AssetRow {
   return { ...row, tags: deserializeTags(row.tags) };
 }
 
-export function createAssetRepository(db: Db) {
+/** Strip FTS5 operators / quotes so user input can't inject MATCH syntax. */
+function tokenize(raw: string): string[] {
+  return raw
+    .replace(/['"()*:^~\-+]/g, " ")
+    .split(/\s+/)
+    .map(t => t.trim())
+    .filter(t => t.length > 0);
+}
+
+export function createAssetRepository(db: Db, sqlite: Database.Database) {
   return {
     create(input: {
       projectId?: string | null;
@@ -60,6 +66,18 @@ export function createAssetRepository(db: Db) {
         updatedAt:   now(),
       };
       db.insert(assets).values(row).run();
+
+      // Sync FTS — delete-before-insert guard prevents duplicate rows on retry
+      sqlite.prepare(`DELETE FROM assets_fts WHERE id = ?`).run(row.id);
+      sqlite.prepare(
+        `INSERT INTO assets_fts(id, name, tags, description) VALUES (?, ?, ?, ?)`
+      ).run(
+        row.id,
+        row.name,
+        (input.tags ?? []).join(" "),
+        input.description ?? "",
+      );
+
       return toAssetRow(row as Asset);
     },
 
@@ -81,6 +99,61 @@ export function createAssetRepository(db: Db) {
     listByProject(projectId: string): AssetRow[] {
       return db.select().from(assets).where(eq(assets.projectId, projectId)).all().map(toAssetRow);
     },
+
+    list(filters: {
+      query?: string;
+      projectId?: string;
+      type?: "image" | "video" | "audio" | "prompt" | "other";
+      limit: number;
+      offset: number;
+    }): { items: AssetRow[]; total: number } {
+      const conditions: ReturnType<typeof eq>[] = [];
+
+      if (filters.query) {
+        const tokens = tokenize(filters.query);
+        if (tokens.length > 0) {
+          // FTS path: each token quoted and joined with AND
+          const safe = tokens.map(t => `"${t}"`).join(" AND ");
+          const ftsIds = (
+            sqlite.prepare(
+              `SELECT id FROM assets_fts WHERE assets_fts MATCH ? ORDER BY rank`
+            ).all(safe) as { id: string }[]
+          ).map(r => r.id);
+
+          if (ftsIds.length === 0) return { items: [], total: 0 };
+          conditions.push(inArray(assets.id, ftsIds) as ReturnType<typeof eq>);
+        }
+        // tokens.length === 0 → degenerate input (all operators) → no query predicate;
+        // other filters (projectId, type) still apply below.
+      }
+
+      if (filters.projectId) {
+        conditions.push(eq(assets.projectId, filters.projectId));
+      }
+      if (filters.type) {
+        conditions.push(eq(assets.type, filters.type));
+      }
+
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [{ total }] = db
+        .select({ total: sql<number>`count(*)` })
+        .from(assets)
+        .where(where)
+        .all();
+
+      const items = db
+        .select()
+        .from(assets)
+        .where(where)
+        .orderBy(desc(assets.createdAt))
+        .limit(filters.limit)
+        .offset(filters.offset)
+        .all()
+        .map(toAssetRow);
+
+      return { items, total };
+    },
   };
 }
 
@@ -88,5 +161,16 @@ export type AssetRepository = ReturnType<typeof createAssetRepository>;
 
 // Re-export so callers don't need to import schema directly
 export type { Asset, NewAsset };
-// Suppress unused warning for hydrate — kept for future use
-void hydrate;
+
+// LIKE fallback helper (AND-over-tokens / OR-over-columns) — kept for future use
+// when tokenize() is relaxed to yield tokens that need plain-text fallback.
+export function buildLikeFallback(tokens: string[]) {
+  return tokens.map(token => {
+    const pat = `%${token}%`;
+    return or(
+      like(assets.name, pat),
+      like(assets.tags, pat),
+      like(assets.description, pat),
+    )!;
+  });
+}

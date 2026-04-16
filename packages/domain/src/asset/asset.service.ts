@@ -6,6 +6,8 @@ import type {
   ImportAssetInput,
   ImportAssetResult,
   AssetResponse,
+  ListAssetsQuery,
+  AssetListResponse,
 } from "@starline/shared";
 import type { computeFileHash } from "./file.utils.js";
 
@@ -135,6 +137,16 @@ export function createAssetService(repo: AssetRepository, computeHash: ComputeHa
     getById(id: string): AssetResponse | null {
       const row = repo.getById(id);
       return row ? toResponse(row) : null;
+    },
+
+    list(filters: ListAssetsQuery): AssetListResponse {
+      const { items, total } = repo.list(filters);
+      return {
+        items:  items.map(toResponse),
+        total,
+        limit:  filters.limit,
+        offset: filters.offset,
+      };
     },
   };
 }

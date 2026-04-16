@@ -1,4 +1,4 @@
-export { getDb } from "./db.js";
+export { getDb, getSqlite } from "./db.js";
 export type { Db } from "./db.js";
 export { createProjectRepository } from "./project.repository.js";
 export type { ProjectRepository } from "./project.repository.js";

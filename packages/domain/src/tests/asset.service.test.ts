@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createAssetService, AssetImportError } from "../asset/asset.service.js";
 import type { AssetRepository, AssetRow } from "@starline/storage";
+import type { ListAssetsQuery } from "@starline/shared";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,7 @@ function makeRepo(overrides: Partial<AssetRepository> = {}): AssetRepository {
     getByHash:       vi.fn(),
     getByFilePath:   vi.fn(),
     listByProject:   vi.fn(),
+    list:            vi.fn(),
     ...overrides,
   };
 }
@@ -151,5 +153,38 @@ describe("assetService.getById", () => {
     const repo = makeRepo({ getById: vi.fn().mockReturnValue(undefined) });
     const service = createAssetService(repo, vi.fn());
     expect(service.getById("nope")).toBeNull();
+  });
+});
+
+describe("assetService.list", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("passes filters to repo and wraps result with limit/offset", () => {
+    const row = makeAssetRow();
+    const repoList = vi.fn().mockReturnValue({ items: [row], total: 1 });
+    const repo = makeRepo({ list: repoList });
+    const service = createAssetService(repo, vi.fn());
+
+    const filters: ListAssetsQuery = { limit: 50, offset: 0 };
+    const result = service.list(filters);
+
+    expect(repoList).toHaveBeenCalledOnce();
+    expect(repoList).toHaveBeenCalledWith(filters);
+    expect(result.total).toBe(1);
+    expect(result.limit).toBe(50);
+    expect(result.offset).toBe(0);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]!.id).toBe("asset-1");
+  });
+
+  it("passes query and type filters through unchanged", () => {
+    const repoList = vi.fn().mockReturnValue({ items: [], total: 0 });
+    const repo = makeRepo({ list: repoList });
+    const service = createAssetService(repo, vi.fn());
+
+    const filters: ListAssetsQuery = { query: "cat", type: "image", limit: 10, offset: 0 };
+    service.list(filters);
+
+    expect(repoList).toHaveBeenCalledWith(filters);
   });
 });
