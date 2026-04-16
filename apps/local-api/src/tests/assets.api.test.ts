@@ -1,0 +1,115 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { buildServer } from "../server.js";
+import path from "path";
+import os from "os";
+import fs from "fs";
+
+const ts = Date.now();
+const DB_PATH    = path.join(os.tmpdir(), `starline-assets-test-${ts}.db`);
+const tempFile   = path.join(os.tmpdir(), `starline-asset-${ts}.txt`);   // content: "hello starline"
+const tempFile2  = path.join(os.tmpdir(), `starline-asset-${ts}-2.txt`); // content: "world starline"
+
+const app = buildServer(DB_PATH);
+
+beforeAll(async () => {
+  fs.writeFileSync(tempFile,  "hello starline");
+  fs.writeFileSync(tempFile2, "world starline");
+  await app.ready();
+});
+
+afterAll(async () => {
+  await app.close();
+  for (const f of [tempFile, tempFile2, DB_PATH]) {
+    try { fs.unlinkSync(f); } catch {}
+  }
+});
+
+describe("Asset Import API", () => {
+  let assetId: string;
+
+  it("#1 POST /api/assets/import — 201 on new file", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: { filePath: tempFile, type: "other", name: "My Asset", tags: ["test"] },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ created: boolean; asset: { id: string; name: string; tags: string[] } }>();
+    expect(body.created).toBe(true);
+    expect(body.asset.name).toBe("My Asset");
+    expect(body.asset.tags).toEqual(["test"]);
+    assetId = body.asset.id;
+  });
+
+  it("#2 POST /api/assets/import — 200 on same file (content dedup)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: { filePath: tempFile, type: "other" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ created: boolean; asset: { id: string } }>();
+    expect(body.created).toBe(false);
+    expect(body.asset.id).toBe(assetId);
+  });
+
+  it("#3 POST /api/assets/import — 409 PATH_CONFLICT after file content changes", async () => {
+    // Overwrite tempFile with different content (different hash)
+    fs.writeFileSync(tempFile, "completely different content " + Date.now());
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: { filePath: tempFile, type: "other" },
+    });
+    expect(res.statusCode).toBe(409);
+    const body = res.json<{ code: string; existingAssetId: string }>();
+    expect(body.code).toBe("PATH_CONFLICT");
+    expect(body.existingAssetId).toBe(assetId);
+  });
+
+  it("#4 POST /api/assets/import — 201 for tempFile2 (distinct content)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: { filePath: tempFile2, type: "other" },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ created: boolean; asset: { id: string } }>();
+    expect(body.created).toBe(true);
+    expect(body.asset.id).not.toBe(assetId);
+  });
+
+  it("#5 POST /api/assets/import — 422 FILE_NOT_FOUND for nonexistent path", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: { filePath: "/no/such/file-xyz.txt", type: "other" },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ code: string }>().code).toBe("FILE_NOT_FOUND");
+  });
+
+  it("#6 POST /api/assets/import — 400 on invalid body (missing type)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: { filePath: tempFile2 },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("#7 GET /api/assets/:id — 200 with correct asset", async () => {
+    const res = await app.inject({ method: "GET", url: `/api/assets/${assetId}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ id: string; name: string; contentHash: string }>();
+    expect(body.id).toBe(assetId);
+    expect(body.name).toBe("My Asset");
+    expect(body.contentHash).toBeTruthy();
+  });
+
+  it("#8 GET /api/assets/:id — 404 for unknown id", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/assets/no-such-id" });
+    expect(res.statusCode).toBe(404);
+  });
+});
