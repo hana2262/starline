@@ -1,0 +1,33 @@
+import { useState } from "react";
+import { useProjects } from "../hooks/useProjects.js";
+import ProjectList from "../components/ProjectList.js";
+import ProjectCreateModal from "../components/ProjectCreateModal.js";
+
+export default function ProjectsPage() {
+  const [showCreate, setShowCreate] = useState(false);
+  const { data: projects, isLoading, isError, error } = useProjects();
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-semibold text-gray-900">Projects</h2>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          + New Project
+        </button>
+      </div>
+
+      {isLoading && <p className="text-gray-400 text-sm">Loading…</p>}
+      {isError && (
+        <p className="text-red-600 text-sm">Error: {String(error)}</p>
+      )}
+      {projects && <ProjectList projects={projects} />}
+
+      {showCreate && (
+        <ProjectCreateModal onClose={() => setShowCreate(false)} />
+      )}
+    </div>
+  );
+}
