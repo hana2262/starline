@@ -15,19 +15,22 @@ export const ImportAssetSchema = z.object({
 export type ImportAssetInput = z.infer<typeof ImportAssetSchema>;
 
 export const AssetResponseSchema = z.object({
-  id:          z.string(),
-  projectId:   z.string().nullable(),
-  name:        z.string(),
-  type:        AssetTypeSchema,
-  filePath:    z.string(),
-  fileSize:    z.number(),
-  mimeType:    z.string().nullable(),
-  contentHash: z.string(),
-  tags:        z.array(z.string()),
-  description: z.string().nullable(),
-  status:      z.enum(["active", "archived"]),
-  createdAt:   z.string(),
-  updatedAt:   z.string(),
+  id:               z.string(),
+  projectId:        z.string().nullable(),
+  name:             z.string(),
+  type:             AssetTypeSchema,
+  filePath:         z.string(),
+  fileSize:         z.number(),
+  mimeType:         z.string().nullable(),
+  contentHash:      z.string(),
+  tags:             z.array(z.string()),
+  description:      z.string().nullable(),
+  status:           z.enum(["active", "archived"]),
+  createdAt:        z.string(),
+  updatedAt:        z.string(),
+  sourceConnector:  z.string().nullable(),
+  generationPrompt: z.string().nullable(),
+  generationMeta:   z.string().nullable(),
 });
 
 export type AssetResponse = z.infer<typeof AssetResponseSchema>;

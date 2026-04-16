@@ -57,6 +57,9 @@ importers:
 
   apps/local-api:
     dependencies:
+      '@starline/connectors':
+        specifier: workspace:*
+        version: link:../../packages/connectors
       '@starline/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -83,8 +86,20 @@ importers:
         specifier: ^1.6.0
         version: 1.6.1(@types/node@20.19.39)
 
+  packages/connectors:
+    devDependencies:
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.1(@types/node@20.19.39)
+
   packages/domain:
     dependencies:
+      '@starline/connectors':
+        specifier: workspace:*
+        version: link:../connectors
       '@starline/shared':
         specifier: workspace:*
         version: link:../shared

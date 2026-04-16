@@ -1,9 +1,13 @@
 import Fastify from "fastify";
+import path from "path";
 import { getDb, getSqlite, createProjectRepository, createAssetRepository } from "@starline/storage";
-import { createProjectService, createAssetService, AssetImportError, computeFileHash } from "@starline/domain";
+import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError } from "@starline/domain";
+import { MockConnector } from "@starline/connectors";
+import type { Connector } from "@starline/connectors";
 import { runMigrations } from "@starline/storage/src/migrate.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerAssetRoutes } from "./routes/assets.js";
+import { registerGenerationRoutes } from "./routes/generation.js";
 
 export function buildServer(dbPath: string) {
   const app = Fastify({ logger: true });
@@ -19,15 +23,32 @@ export function buildServer(dbPath: string) {
   const assetRepo = createAssetRepository(db, sqlite);
   const assetService = createAssetService(assetRepo, computeFileHash);
 
+  const appDataDir        = path.join(path.dirname(dbPath), "assets");
+  const connectorRegistry = new Map<string, Connector>([
+    ["mock", new MockConnector()],
+  ]);
+  const generationService = createGenerationService(
+    connectorRegistry, assetRepo, computeFileHash, appDataDir,
+  );
+
   // Health check
   app.get("/health", async () => ({ status: "ok" }));
 
   // Feature routes
   registerProjectRoutes(app, projectService);
   registerAssetRoutes(app, assetService);
+  registerGenerationRoutes(app, generationService);
 
-  // Error handler: AssetImportError → 409 or 422; ZodError → 400; else → 500
+  // Error handler: ConnectorError → 404/502; AssetImportError → 409/422; ZodError → 400; else → 500
   app.setErrorHandler((err, _req, reply) => {
+    if (err instanceof ConnectorError) {
+      const status = err.code === "CONNECTOR_NOT_FOUND" ? 404 : 502;
+      return reply.code(status).send({
+        error:       err.message,
+        code:        err.code,
+        connectorId: err.connectorId,
+      });
+    }
     if (err instanceof AssetImportError) {
       const status = err.code === "PATH_CONFLICT" ? 409 : 422;
       return reply.code(status).send({

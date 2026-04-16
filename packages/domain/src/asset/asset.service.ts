@@ -25,34 +25,40 @@ export class AssetImportError extends Error {
 type ComputeHashFn = typeof computeFileHash;
 
 function toResponse(row: {
-  id: string;
-  projectId: string | null;
-  name: string;
-  type: "image" | "video" | "audio" | "prompt" | "other";
-  filePath: string;
-  fileSize: number;
-  mimeType: string | null;
-  contentHash: string;
-  tags: string[];
-  description: string | null;
-  status: "active" | "archived";
-  createdAt: string;
-  updatedAt: string;
+  id:               string;
+  projectId:        string | null;
+  name:             string;
+  type:             "image" | "video" | "audio" | "prompt" | "other";
+  filePath:         string;
+  fileSize:         number;
+  mimeType:         string | null;
+  contentHash:      string;
+  tags:             string[];
+  description:      string | null;
+  status:           "active" | "archived";
+  createdAt:        string;
+  updatedAt:        string;
+  sourceConnector?:  string | null;
+  generationPrompt?: string | null;
+  generationMeta?:   string | null;
 }): AssetResponse {
   return {
-    id:          row.id,
-    projectId:   row.projectId,
-    name:        row.name,
-    type:        row.type,
-    filePath:    row.filePath,
-    fileSize:    row.fileSize,
-    mimeType:    row.mimeType,
-    contentHash: row.contentHash,
-    tags:        row.tags,
-    description: row.description,
-    status:      row.status,
-    createdAt:   row.createdAt,
-    updatedAt:   row.updatedAt,
+    id:               row.id,
+    projectId:        row.projectId,
+    name:             row.name,
+    type:             row.type,
+    filePath:         row.filePath,
+    fileSize:         row.fileSize,
+    mimeType:         row.mimeType,
+    contentHash:      row.contentHash,
+    tags:             row.tags,
+    description:      row.description,
+    status:           row.status,
+    createdAt:        row.createdAt,
+    updatedAt:        row.updatedAt,
+    sourceConnector:  row.sourceConnector  ?? null,
+    generationPrompt: row.generationPrompt ?? null,
+    generationMeta:   row.generationMeta   ?? null,
   };
 }
 

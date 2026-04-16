@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@starline/connectors": "workspace:*",
     "@starline/domain": "workspace:*",
     "@starline/shared": "workspace:*",
     "@starline/storage": "workspace:*",

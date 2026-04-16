@@ -3,4 +3,6 @@ export type { ProjectService } from "./project/project.service.js";
 export { createAssetService, AssetImportError } from "./asset/asset.service.js";
 export type { AssetService } from "./asset/asset.service.js";
 export { computeFileHash } from "./asset/file.utils.js";
+export { createGenerationService, ConnectorError } from "./generation/generation.service.js";
+export type { GenerationService } from "./generation/generation.service.js";
 export type { ListAssetsQuery, AssetListResponse } from "@starline/shared";

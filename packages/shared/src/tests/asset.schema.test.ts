@@ -6,19 +6,22 @@ import {
 } from "../asset.schema.js";
 
 const validAsset = {
-  id: "abc",
-  projectId: null,
-  name: "test.png",
-  type: "image" as const,
-  filePath: "/tmp/test.png",
-  fileSize: 1024,
-  mimeType: "image/png",
-  contentHash: "abc123",
-  tags: [],
-  description: null,
-  status: "active" as const,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  id:               "abc",
+  projectId:        null,
+  name:             "test.png",
+  type:             "image" as const,
+  filePath:         "/tmp/test.png",
+  fileSize:         1024,
+  mimeType:         "image/png",
+  contentHash:      "abc123",
+  tags:             [],
+  description:      null,
+  status:           "active" as const,
+  createdAt:        new Date().toISOString(),
+  updatedAt:        new Date().toISOString(),
+  sourceConnector:  null,
+  generationPrompt: null,
+  generationMeta:   null,
 };
 
 describe("ImportAssetSchema", () => {

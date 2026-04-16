@@ -40,30 +40,37 @@ function tokenize(raw: string): string[] {
 export function createAssetRepository(db: Db, sqlite: Database.Database) {
   return {
     create(input: {
-      projectId?: string | null;
-      name: string;
-      type: "image" | "video" | "audio" | "prompt" | "other";
-      filePath: string;
-      fileSize: number;
-      mimeType?: string | null;
-      contentHash: string;
-      tags?: string[];
-      description?: string | null;
+      id?:              string;
+      projectId?:       string | null;
+      name:             string;
+      type:             "image" | "video" | "audio" | "prompt" | "other";
+      filePath:         string;
+      fileSize:         number;
+      mimeType?:        string | null;
+      contentHash:      string;
+      tags?:            string[];
+      description?:     string | null;
+      sourceConnector?:  string | null;
+      generationPrompt?: string | null;
+      generationMeta?:   string | null;
     }): AssetRow {
       const row: NewAsset = {
-        id:          randomUUID(),
-        projectId:   input.projectId ?? null,
-        name:        input.name,
-        type:        input.type,
-        filePath:    input.filePath,
-        fileSize:    input.fileSize,
-        mimeType:    input.mimeType ?? null,
-        contentHash: input.contentHash,
-        tags:        serializeTags(input.tags ?? []),
-        description: input.description ?? null,
-        status:      "active",
-        createdAt:   now(),
-        updatedAt:   now(),
+        id:               input.id ?? randomUUID(),
+        projectId:        input.projectId ?? null,
+        name:             input.name,
+        type:             input.type,
+        filePath:         input.filePath,
+        fileSize:         input.fileSize,
+        mimeType:         input.mimeType ?? null,
+        contentHash:      input.contentHash,
+        tags:             serializeTags(input.tags ?? []),
+        description:      input.description ?? null,
+        status:           "active",
+        createdAt:        now(),
+        updatedAt:        now(),
+        sourceConnector:  input.sourceConnector  ?? null,
+        generationPrompt: input.generationPrompt ?? null,
+        generationMeta:   input.generationMeta   ?? null,
       };
       db.insert(assets).values(row).run();
 

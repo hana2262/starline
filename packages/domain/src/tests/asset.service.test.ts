@@ -17,9 +17,12 @@ function makeAssetRow(overrides: Partial<AssetRow> = {}): AssetRow {
     contentHash: "hashA",
     tags:        [],
     description: null,
-    status:      "active",
-    createdAt:   "2026-01-01T00:00:00.000Z",
-    updatedAt:   "2026-01-01T00:00:00.000Z",
+    status:           "active",
+    createdAt:        "2026-01-01T00:00:00.000Z",
+    updatedAt:        "2026-01-01T00:00:00.000Z",
+    sourceConnector:  null,
+    generationPrompt: null,
+    generationMeta:   null,
     ...overrides,
   };
 }

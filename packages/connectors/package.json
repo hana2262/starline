@@ -1,5 +1,5 @@
 {
-  "name": "@starline/domain",
+  "name": "@starline/connectors",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,11 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@starline/connectors": "workspace:*",
-    "@starline/shared": "workspace:*",
-    "@starline/storage": "workspace:*"
-  },
+  "dependencies": {},
   "devDependencies": {
     "typescript": "^5.4.5",
     "vitest": "^1.6.0"
