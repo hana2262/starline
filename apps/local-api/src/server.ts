@@ -2,14 +2,17 @@ import Fastify from "fastify";
 import path from "path";
 import { getDb, getSqlite, createProjectRepository, createAssetRepository } from "@starline/storage";
 import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError } from "@starline/domain";
-import { MockConnector } from "@starline/connectors";
+import { MockConnector, MinimaxConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
 import { runMigrations } from "@starline/storage/src/migrate.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerGenerationRoutes } from "./routes/generation.js";
 
-export function buildServer(dbPath: string) {
+export function buildServer(
+  dbPath: string,
+  options?: { extraConnectors?: Map<string, Connector> },
+) {
   const app = Fastify({ logger: true });
 
   // Run migrations and wire dependencies
@@ -27,6 +30,14 @@ export function buildServer(dbPath: string) {
   const connectorRegistry = new Map<string, Connector>([
     ["mock", new MockConnector()],
   ]);
+
+  const minimaxKey = process.env["MINIMAX_API_KEY"];
+  if (minimaxKey) {
+    connectorRegistry.set("minimax", new MinimaxConnector(minimaxKey));
+  }
+
+  options?.extraConnectors?.forEach((c, id) => connectorRegistry.set(id, c));
+
   const generationService = createGenerationService(
     connectorRegistry, assetRepo, computeFileHash, appDataDir,
   );
