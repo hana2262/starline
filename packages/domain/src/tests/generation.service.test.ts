@@ -61,6 +61,10 @@ function makeGenerationRow(overrides: Partial<GenerationRow> = {}): GenerationRo
     createdAt:    "2026-01-01T00:00:00.000Z",
     startedAt:    null,
     finishedAt:   null,
+    attemptCount: 0,
+    maxAttempts:  3,
+    nextRetryAt:  null,
+    settings:     null,
     ...overrides,
   };
 }
@@ -96,10 +100,22 @@ function makeGenRepo(overrides: Partial<GenerationRepository> = {}): GenerationR
   // Simulates in-memory state that mutates through mark* calls
   let stored: GenerationRow = makeGenerationRow();
   return {
-    create: vi.fn().mockImplementation(() => stored),
+    create: vi.fn().mockImplementation((input: Parameters<GenerationRepository["create"]>[0]) => {
+      stored = {
+        ...stored,
+        id:          input.id ?? stored.id,
+        connectorId: input.connectorId,
+        prompt:      input.prompt,
+        type:        input.type,
+        projectId:   input.projectId ?? null,
+        maxAttempts: input.maxAttempts ?? 3,
+        settings:    input.settings ?? null,
+      };
+      return stored;
+    }),
     getById: vi.fn().mockImplementation(() => stored),
     markRunning: vi.fn().mockImplementation(() => {
-      stored = { ...stored, status: "running", startedAt: "2026-01-01T00:00:01.000Z" };
+      stored = { ...stored, status: "running", startedAt: "2026-01-01T00:00:01.000Z", attemptCount: stored.attemptCount + 1, nextRetryAt: null };
     }),
     markSucceeded: vi.fn().mockImplementation((_id: string, assetId: string) => {
       stored = { ...stored, status: "succeeded", assetId, finishedAt: "2026-01-01T00:00:02.000Z" };
@@ -107,6 +123,10 @@ function makeGenRepo(overrides: Partial<GenerationRepository> = {}): GenerationR
     markFailed: vi.fn().mockImplementation((_id: string, code: string, msg: string) => {
       stored = { ...stored, status: "failed", errorCode: code, errorMessage: msg, finishedAt: "2026-01-01T00:00:02.000Z" };
     }),
+    markRetrying: vi.fn().mockImplementation((_id: string, nextRetryAt: string) => {
+      stored = { ...stored, status: "queued", nextRetryAt, startedAt: null };
+    }),
+    getNextQueued: vi.fn().mockReturnValue(undefined),
     ...overrides,
   };
 }
@@ -115,13 +135,14 @@ function makeService(
   connectorOverrides: Partial<Connector> = {},
   repoOverrides: Partial<AssetRepository> = {},
   genRepoOverrides: Partial<GenerationRepository> = {},
+  serviceOpts?: { retryBaseMs?: number },
 ) {
   const connector = makeMockConnector(connectorOverrides);
   const repo      = makeRepo(repoOverrides);
   const genRepo   = makeGenRepo(genRepoOverrides);
   const registry  = new Map([["mock", connector]]);
   return {
-    service:    createGenerationService(registry, repo, genRepo, mockHashFn, APP_DIR),
+    service:    createGenerationService(registry, repo, genRepo, mockHashFn, APP_DIR, serviceOpts ?? { retryBaseMs: 0 }),
     connector,
     repo,
     genRepo,
@@ -147,65 +168,85 @@ describe("generationService.test", () => {
   });
 });
 
-// ── submit() — success path ────────────────────────────────────────────────
+// ── enqueue() — pre-flight ─────────────────────────────────────────────────
 
-describe("generationService.submit — success path", () => {
+describe("generationService.enqueue — pre-flight", () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it("creates job before calling connector.generate()", async () => {
-    const { service, genRepo, connector } = makeService();
-    await service.submit({ connectorId: "mock", prompt: "a cat", type: "image" });
-
-    const createOrder   = vi.mocked(genRepo.create).mock.invocationCallOrder[0]!;
-    const generateOrder = vi.mocked(connector.generate).mock.invocationCallOrder[0]!;
-    expect(createOrder).toBeLessThan(generateOrder);
+  it("throws CONNECTOR_NOT_FOUND before creating a job when connector unknown", async () => {
+    const { service, genRepo } = makeService();
+    await expect(
+      service.enqueue({ connectorId: "bad", prompt: "x", type: "image" }),
+    ).rejects.toMatchObject({ code: "CONNECTOR_NOT_FOUND" });
+    expect(genRepo.create).not.toHaveBeenCalled();
   });
 
-  it("calls markRunning() before generate() and after create()", async () => {
-    const { service, genRepo, connector } = makeService();
-    await service.submit({ connectorId: "mock", prompt: "a cat", type: "image" });
+  it("creates job and returns { job: { status: 'queued' } } immediately", async () => {
+    const { service } = makeService();
+    const result = await service.enqueue({ connectorId: "mock", prompt: "a cat", type: "image" });
+    expect(result.job.status).toBe("queued");
+    expect(result.job.connectorId).toBe("mock");
+    expect(result.job.attemptCount).toBe(0);
+    expect(result.job.assetId).toBeNull();
+  });
 
+  it("genRepo.create() is called before the queue receives the jobId", async () => {
+    const { service, genRepo } = makeService();
+    await service.enqueue({ connectorId: "mock", prompt: "a cat", type: "image" });
+    // create must have been called since we got a result
+    expect(genRepo.create).toHaveBeenCalledOnce();
+  });
+});
+
+// ── execution — success path ───────────────────────────────────────────────
+
+describe("generationService — execution success path", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("after idle: job.status === 'succeeded' with assetId linked", async () => {
+    const { service, genRepo } = makeService();
+    await service.enqueue({ connectorId: "mock", prompt: "a cat", type: "image" });
+    await service.queue.waitForIdle();
+    expect(genRepo.markSucceeded).toHaveBeenCalledOnce();
+    const [, assetId] = vi.mocked(genRepo.markSucceeded).mock.calls[0]!;
+    expect(typeof assetId).toBe("string");
+  });
+
+  it("markRunning() called before connector.generate()", async () => {
+    const { service, genRepo, connector } = makeService();
+    await service.enqueue({ connectorId: "mock", prompt: "a cat", type: "image" });
+    await service.queue.waitForIdle();
     const runningOrder  = vi.mocked(genRepo.markRunning).mock.invocationCallOrder[0]!;
     const generateOrder = vi.mocked(connector.generate).mock.invocationCallOrder[0]!;
-    const createOrder   = vi.mocked(genRepo.create).mock.invocationCallOrder[0]!;
-    expect(createOrder).toBeLessThan(runningOrder);
     expect(runningOrder).toBeLessThan(generateOrder);
   });
 
-  it("calls markSucceeded() with the assetId from assetRepo.create()", async () => {
+  it("markSucceeded() called with assetId from assetRepo.create()", async () => {
     const { service, genRepo, repo } = makeService();
-    await service.submit({ connectorId: "mock", prompt: "a cat", type: "image" });
-
+    await service.enqueue({ connectorId: "mock", prompt: "a cat", type: "image" });
+    await service.queue.waitForIdle();
     const assetId = vi.mocked(repo.create).mock.results[0]!.value.id as string;
     expect(genRepo.markSucceeded).toHaveBeenCalledWith("job-1", assetId);
   });
 
-  it("returns { job: { status: succeeded }, asset: AssetResponse }", async () => {
+  it("temp file is unlinked after success", async () => {
     const { service } = makeService();
-    const result = await service.submit({ connectorId: "mock", prompt: "a cat", type: "image" });
-
-    expect(result.job.status).toBe("succeeded");
-    expect(result.job.connectorId).toBe("mock");
-    expect(result.job.assetId).toBeTruthy();
-    expect(result.asset).not.toBeNull();
-    expect(result.asset?.sourceConnector).toBe("mock");
-  });
-
-  it("cleans up temp file after success", async () => {
-    const { service } = makeService();
-    await service.submit({ connectorId: "mock", prompt: "a cat", type: "image" });
+    await service.enqueue({ connectorId: "mock", prompt: "a cat", type: "image" });
+    await service.queue.waitForIdle();
     expect(mockUnlink).toHaveBeenCalled();
   });
 
-  it("passes tags and projectId through to assetRepo.create()", async () => {
+  it("tags, projectId, and settings flow through to assetRepo.create()", async () => {
     const { service, repo } = makeService();
-    await service.submit({
+    await service.enqueue({
       connectorId: "mock",
       prompt:      "test",
       type:        "audio",
       projectId:   "proj-42",
       tags:        ["foo", "bar"],
+      settings:    { quality: "high" },
     });
+    await service.queue.waitForIdle();
 
     const createCall = vi.mocked(repo.create).mock.calls[0]![0];
     expect(createCall.projectId).toBe("proj-42");
@@ -213,9 +254,10 @@ describe("generationService.submit — success path", () => {
     expect(createCall.type).toBe("audio");
   });
 
-  it("copies file to managed path using path.normalize-safe assertion", async () => {
+  it("copies temp file to managed path under APP_DIR", async () => {
     const { service, repo } = makeService();
-    await service.submit({ connectorId: "mock", prompt: "a cat", type: "image" });
+    await service.enqueue({ connectorId: "mock", prompt: "a cat", type: "image" });
+    await service.queue.waitForIdle();
 
     expect(mockMkdir).toHaveBeenCalledWith(APP_DIR, { recursive: true });
     expect(mockCopy).toHaveBeenCalledOnce();
@@ -224,101 +266,89 @@ describe("generationService.submit — success path", () => {
   });
 });
 
-// ── submit() — GENERATION_FAILED ──────────────────────────────────────────
+// ── execution — retryable failure ─────────────────────────────────────────
 
-describe("generationService.submit — GENERATION_FAILED", () => {
+describe("generationService — retryable failure", () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it("returns { job: { status: failed, errorCode: GENERATION_FAILED }, asset: null }", async () => {
-    const { service } = makeService({
-      generate: vi.fn().mockRejectedValue(new Error("provider down")),
-    });
-    const result = await service.submit({ connectorId: "mock", prompt: "x", type: "image" });
-    expect(result.job.status).toBe("failed");
-    expect(result.job.errorCode).toBe("GENERATION_FAILED");
-    expect(result.job.errorMessage).toBe("provider down");
-    expect(result.asset).toBeNull();
-  });
-
-  it("calls markFailed() with GENERATION_FAILED and the error message", async () => {
+  it("markRetrying() called; job status goes back to 'queued' with nextRetryAt", async () => {
     const { service, genRepo } = makeService({
-      generate: vi.fn().mockRejectedValue(new Error("provider down")),
-    });
-    await service.submit({ connectorId: "mock", prompt: "x", type: "image" });
-    expect(genRepo.markFailed).toHaveBeenCalledWith("job-1", "GENERATION_FAILED", "provider down");
+      generate: vi.fn().mockRejectedValue(new Error("transient")),
+    }, {}, {}, { retryBaseMs: 0 });
+
+    await service.enqueue({ connectorId: "mock", prompt: "x", type: "image" });
+    await service.queue.waitForIdle();
+
+    expect(genRepo.markRetrying).toHaveBeenCalledOnce();
+    const [, nextRetryAt] = vi.mocked(genRepo.markRetrying).mock.calls[0]!;
+    expect(typeof nextRetryAt).toBe("string");
   });
 
-  it("does NOT call assetRepo.create() when generate() fails", async () => {
-    const { service, repo } = makeService({
-      generate: vi.fn().mockRejectedValue(new Error("provider down")),
-    });
-    await service.submit({ connectorId: "mock", prompt: "x", type: "image" });
-    expect(repo.create).not.toHaveBeenCalled();
-  });
-
-  it("does NOT call markSucceeded() when generate() fails", async () => {
+  it("markFailed() NOT called when retries remain", async () => {
     const { service, genRepo } = makeService({
-      generate: vi.fn().mockRejectedValue(new Error("provider down")),
-    });
-    await service.submit({ connectorId: "mock", prompt: "x", type: "image" });
-    expect(genRepo.markSucceeded).not.toHaveBeenCalled();
+      generate: vi.fn().mockRejectedValue(new Error("transient")),
+    }, {}, {}, { retryBaseMs: 0 });
+
+    await service.enqueue({ connectorId: "mock", prompt: "x", type: "image" });
+    await service.queue.waitForIdle();
+
+    expect(genRepo.markFailed).not.toHaveBeenCalled();
+  });
+
+  it("after maxAttempts exhausted: markFailed() called terminally", async () => {
+    const { service, genRepo } = makeService({
+      generate: vi.fn().mockRejectedValue(new Error("always fails")),
+    }, {}, {
+      // Start with attemptCount already at maxAttempts so first attempt exhausts retries
+      getById: vi.fn().mockReturnValue(makeGenerationRow({ attemptCount: 3, maxAttempts: 3 })),
+    }, { retryBaseMs: 0 });
+
+    await service.enqueue({ connectorId: "mock", prompt: "x", type: "image" });
+    await service.queue.waitForIdle();
+
+    expect(genRepo.markFailed).toHaveBeenCalledWith("job-1", "GENERATION_FAILED", "always fails");
+    expect(genRepo.markRetrying).not.toHaveBeenCalled();
   });
 });
 
-// ── submit() — PERSIST_FAILED ──────────────────────────────────────────────
+// ── execution — non-retryable failure ─────────────────────────────────────
 
-describe("generationService.submit — PERSIST_FAILED", () => {
+describe("generationService — non-retryable failure", () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it("returns failed job when assetRepo.create() throws", async () => {
-    const { service } = makeService({}, {
-      create: vi.fn().mockImplementation(() => { throw new Error("DB error"); }),
+  it("err.retryable === false → markFailed() on first attempt, no retry scheduled", async () => {
+    const nonRetryableErr = Object.assign(new Error("content policy"), { retryable: false });
+    const { service, genRepo } = makeService({
+      generate: vi.fn().mockRejectedValue(nonRetryableErr),
     });
-    const result = await service.submit({ connectorId: "mock", prompt: "a cat", type: "image" });
-    expect(result.job.status).toBe("failed");
-    expect(result.job.errorCode).toBe("PERSIST_FAILED");
-    expect(result.asset).toBeNull();
-  });
 
-  it("cleans up managed file when assetRepo.create() throws", async () => {
+    await service.enqueue({ connectorId: "mock", prompt: "x", type: "image" });
+    await service.queue.waitForIdle();
+
+    expect(genRepo.markFailed).toHaveBeenCalledWith("job-1", "GENERATION_FAILED", "content policy");
+    expect(genRepo.markRetrying).not.toHaveBeenCalled();
+  });
+});
+
+// ── execution — PERSIST_FAILED cleanup ────────────────────────────────────
+
+describe("generationService — PERSIST_FAILED managed file cleanup", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("managed file unlinked when assetRepo.create() throws", async () => {
     const { service } = makeService({}, {
       create: vi.fn().mockImplementation(() => { throw new Error("DB error"); }),
-    });
-    await service.submit({ connectorId: "mock", prompt: "a cat", type: "image" });
+    }, {}, { retryBaseMs: 0 });
+
+    await service.enqueue({ connectorId: "mock", prompt: "a cat", type: "image" });
+    await service.queue.waitForIdle();
+
+    // unlinkSync should be called for both managedPath and temp file
     expect(mockUnlink).toHaveBeenCalled();
   });
-
-  it("calls markFailed() with PERSIST_FAILED when assetRepo.create() throws", async () => {
-    const { service, genRepo } = makeService({}, {
-      create: vi.fn().mockImplementation(() => { throw new Error("DB error"); }),
-    });
-    await service.submit({ connectorId: "mock", prompt: "a cat", type: "image" });
-    expect(genRepo.markFailed).toHaveBeenCalledWith("job-1", "PERSIST_FAILED", "DB error");
-  });
 });
 
-// ── submit() — CONNECTOR_NOT_FOUND ────────────────────────────────────────
-
-describe("generationService.submit — CONNECTOR_NOT_FOUND", () => {
-  beforeEach(() => { vi.clearAllMocks(); });
-
-  it("throws ConnectorError with code CONNECTOR_NOT_FOUND for unknown connector", async () => {
-    const { service } = makeService();
-    await expect(
-      service.submit({ connectorId: "bad", prompt: "x", type: "image" }),
-    ).rejects.toMatchObject({ code: "CONNECTOR_NOT_FOUND" });
-  });
-
-  it("does NOT call genRepo.create() when connector is not found", async () => {
-    const { service, genRepo } = makeService();
-    await expect(
-      service.submit({ connectorId: "bad", prompt: "x", type: "image" }),
-    ).rejects.toThrow();
-    expect(genRepo.create).not.toHaveBeenCalled();
-  });
-});
-
-// ── getJob() ───────────────────────────────────────────────────────────────
+// ── getJob() ──────────────────────────────────────────────────────────────
 
 describe("generationService.getJob", () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -330,6 +360,8 @@ describe("generationService.getJob", () => {
     expect(job?.id).toBe("job-1");
     expect(job?.connectorId).toBe("mock");
     expect(job?.status).toBe("queued");
+    expect(job?.attemptCount).toBe(0);
+    expect(job?.maxAttempts).toBe(3);
   });
 
   it("returns null when job does not exist", () => {

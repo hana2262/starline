@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, and, or, isNull, lte, asc, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { Db } from "./db.js";
 import { generations } from "./schema.js";
@@ -13,11 +13,13 @@ export type GenerationRow = Generation;
 export function createGenerationRepository(db: Db) {
   return {
     create(input: {
-      id?:         string;
-      connectorId: string;
-      prompt:      string;
-      type:        "image" | "video" | "audio" | "prompt" | "other";
-      projectId?:  string | null;
+      id?:          string;
+      connectorId:  string;
+      prompt:       string;
+      type:         "image" | "video" | "audio" | "prompt" | "other";
+      projectId?:   string | null;
+      maxAttempts?: number;
+      settings?:    string | null;
     }): GenerationRow {
       const row: GenerationRow = {
         id:           input.id ?? randomUUID(),
@@ -32,6 +34,10 @@ export function createGenerationRepository(db: Db) {
         createdAt:    now(),
         startedAt:    null,
         finishedAt:   null,
+        attemptCount: 0,
+        maxAttempts:  input.maxAttempts ?? 3,
+        nextRetryAt:  null,
+        settings:     input.settings ?? null,
       };
       db.insert(generations).values(row).run();
       return row;
@@ -43,7 +49,12 @@ export function createGenerationRepository(db: Db) {
 
     markRunning(id: string): void {
       db.update(generations)
-        .set({ status: "running", startedAt: now() })
+        .set({
+          status:       "running",
+          startedAt:    now(),
+          nextRetryAt:  null,
+          attemptCount: sql`${generations.attemptCount} + 1`,
+        })
         .where(eq(generations.id, id))
         .run();
     },
@@ -60,6 +71,31 @@ export function createGenerationRepository(db: Db) {
         .set({ status: "failed", errorCode, errorMessage, finishedAt: now() })
         .where(eq(generations.id, id))
         .run();
+    },
+
+    markRetrying(id: string, nextRetryAt: string): void {
+      db.update(generations)
+        .set({ status: "queued", nextRetryAt, startedAt: null })
+        .where(eq(generations.id, id))
+        .run();
+    },
+
+    /** Returns the next queued job eligible to run (nextRetryAt is null or in the past).
+     *  Provided for future startup recovery; not called by the MVP in-process worker. */
+    getNextQueued(nowIso?: string): GenerationRow | undefined {
+      const cutoff = nowIso ?? now();
+      return db
+        .select()
+        .from(generations)
+        .where(
+          and(
+            eq(generations.status, "queued"),
+            or(isNull(generations.nextRetryAt), lte(generations.nextRetryAt, cutoff)),
+          ),
+        )
+        .orderBy(asc(generations.createdAt))
+        .limit(1)
+        .get();
     },
   };
 }

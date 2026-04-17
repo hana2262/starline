@@ -7,11 +7,31 @@ import os from "os";
 import fs from "fs";
 import { randomUUID } from "crypto";
 
+// ── helpers ────────────────────────────────────────────────────────────────
+
+/** Poll GET /api/generation/:id until status is terminal (not queued/running). */
+async function waitForJob(
+  app: ReturnType<typeof buildServer>,
+  jobId: string,
+  timeoutMs = 3000,
+): Promise<GenerationJob> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await app.inject({ method: "GET", url: `/api/generation/${jobId}` });
+    const job = res.json<{ job: GenerationJob }>().job;
+    if (job.status !== "queued" && job.status !== "running") return job;
+    await new Promise(r => setTimeout(r, 10));
+  }
+  throw new Error(`Job ${jobId} did not complete within ${timeoutMs}ms`);
+}
+
+// ── main test app ──────────────────────────────────────────────────────────
+
 const ts      = Date.now();
 const DB_PATH = path.join(os.tmpdir(), `starline-gen-test-${ts}.db`);
 const APP_ASSETS_DIR = path.join(os.tmpdir(), `starline-gen-test-${ts}-assets`);
 
-const app = buildServer(DB_PATH);
+const app = buildServer(DB_PATH, { retryBaseMs: 10 });
 
 beforeAll(async () => {
   await app.ready();
@@ -35,7 +55,9 @@ type AssetBody = {
   type: string;
 };
 
-type GenBody = { job: GenerationJob; asset: AssetBody | null };
+type EnqueueBody = { job: GenerationJob };
+
+// ── Connector health-check API ─────────────────────────────────────────────
 
 describe("Connector health-check API", () => {
   it("#1 POST /api/connectors/mock/test — 200 ok", async () => {
@@ -54,58 +76,78 @@ describe("Connector health-check API", () => {
   });
 });
 
+// ── Generation submit API ──────────────────────────────────────────────────
+
 describe("Generation submit API", () => {
   let generatedJobId: string;
   let generatedAssetId: string;
   let generatedFilePath: string;
 
-  it("#3 POST /api/generation/submit — 201 with correct metadata", async () => {
+  it("#3 POST /api/generation/submit — 202 with job.status 'queued'", async () => {
     const res = await app.inject({
       method:  "POST",
       url:     "/api/generation/submit",
       payload: { connectorId: "mock", prompt: "a cat in space", type: "image" },
     });
-    expect(res.statusCode).toBe(201);
-    const body = res.json<GenBody>();
-    expect(body.job.status).toBe("succeeded");
+    expect(res.statusCode).toBe(202);
+    const body = res.json<EnqueueBody>();
+    expect(body.job.status).toBe("queued");
     expect(body.job.connectorId).toBe("mock");
-    expect(body.asset).not.toBeNull();
-    expect(body.asset!.sourceConnector).toBe("mock");
-    expect(body.asset!.generationPrompt).toBe("a cat in space");
-    expect(() => JSON.parse(body.asset!.generationMeta!)).not.toThrow();
-    const meta = JSON.parse(body.asset!.generationMeta!);
+    expect(body.job.attemptCount).toBe(0);
+    expect(body.job.maxAttempts).toBe(3);
+    generatedJobId = body.job.id;
+  });
+
+  it("#4 GET /api/generation/:id — job completes to 'succeeded' with assetId", async () => {
+    const job = await waitForJob(app, generatedJobId);
+    expect(job.status).toBe("succeeded");
+    expect(job.assetId).toBeTruthy();
+    expect(job.finishedAt).not.toBeNull();
+    expect(job.attemptCount).toBe(1);
+    generatedAssetId = job.assetId!;
+  });
+
+  it("#5 GET /api/assets/:id — asset has correct generation metadata", async () => {
+    const res = await app.inject({ method: "GET", url: `/api/assets/${generatedAssetId}` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<AssetBody>();
+    expect(body.sourceConnector).toBe("mock");
+    expect(body.generationPrompt).toBe("a cat in space");
+    expect(() => JSON.parse(body.generationMeta!)).not.toThrow();
+    const meta = JSON.parse(body.generationMeta!);
     expect(meta.model).toBe("mock-v1");
     expect(typeof meta.seed).toBe("string");
     expect(typeof meta.latencyMs).toBe("number");
-
-    generatedJobId    = body.job.id;
-    generatedAssetId  = body.asset!.id;
-    generatedFilePath = body.asset!.filePath;
+    generatedFilePath = body.filePath;
   });
 
-  it("#4 POST /api/generation/submit — 201 with projectId and tags", async () => {
+  it("#6 Managed file exists on disk at asset.filePath (not OS temp)", async () => {
+    expect(generatedFilePath).toBeTruthy();
+    expect(fs.existsSync(generatedFilePath)).toBe(true);
+    expect(generatedFilePath).not.toMatch(/starline-mock-/);
+  });
+
+  it("#7 POST /api/generation/submit — 202 with projectId and tags; wait → succeeded", async () => {
     const res = await app.inject({
       method:  "POST",
       url:     "/api/generation/submit",
       payload: { connectorId: "mock", prompt: "dog on moon", type: "audio", projectId: "proj-x", tags: ["foo"] },
     });
-    expect(res.statusCode).toBe(201);
-    const body = res.json<GenBody>();
-    expect(body.job.status).toBe("succeeded");
-    expect(body.asset).not.toBeNull();
-    expect(body.asset!.projectId).toBe("proj-x");
-    expect(body.asset!.tags).toEqual(["foo"]);
-    expect(body.asset!.type).toBe("audio");
+    expect(res.statusCode).toBe(202);
+    const { job: enqueuedJob } = res.json<EnqueueBody>();
+    expect(enqueuedJob.status).toBe("queued");
+
+    const completedJob = await waitForJob(app, enqueuedJob.id);
+    expect(completedJob.status).toBe("succeeded");
+
+    const assetRes = await app.inject({ method: "GET", url: `/api/assets/${completedJob.assetId}` });
+    const asset = assetRes.json<AssetBody>();
+    expect(asset.projectId).toBe("proj-x");
+    expect(asset.tags).toEqual(["foo"]);
+    expect(asset.type).toBe("audio");
   });
 
-  it("#5 Managed file exists on disk at asset.filePath (not OS temp)", async () => {
-    expect(generatedFilePath).toBeTruthy();
-    expect(fs.existsSync(generatedFilePath)).toBe(true);
-    // file should NOT be in OS temp (it was moved to appDataDir)
-    expect(generatedFilePath).not.toMatch(/starline-mock-/);
-  });
-
-  it("#6 Two submits with same prompt — both return 201 with distinct job IDs (no dedup)", async () => {
+  it("#8 Two concurrent submits — both 202, distinct job IDs, both complete", async () => {
     const [r1, r2] = await Promise.all([
       app.inject({
         method:  "POST",
@@ -118,16 +160,21 @@ describe("Generation submit API", () => {
         payload: { connectorId: "mock", prompt: "identical prompt", type: "image" },
       }),
     ]);
-    expect(r1.statusCode).toBe(201);
-    expect(r2.statusCode).toBe(201);
-    const b1 = r1.json<GenBody>();
-    const b2 = r2.json<GenBody>();
-    expect(b1.job.status).toBe("succeeded");
-    expect(b2.job.status).toBe("succeeded");
+    expect(r1.statusCode).toBe(202);
+    expect(r2.statusCode).toBe(202);
+    const b1 = r1.json<EnqueueBody>();
+    const b2 = r2.json<EnqueueBody>();
     expect(b1.job.id).not.toBe(b2.job.id);
+
+    const [j1, j2] = await Promise.all([
+      waitForJob(app, b1.job.id),
+      waitForJob(app, b2.job.id),
+    ]);
+    expect(j1.status).toBe("succeeded");
+    expect(j2.status).toBe("succeeded");
   });
 
-  it("#7 POST /api/generation/submit — 404 for bad connectorId", async () => {
+  it("#9 POST /api/generation/submit — 404 for unknown connectorId", async () => {
     const res = await app.inject({
       method:  "POST",
       url:     "/api/generation/submit",
@@ -137,7 +184,7 @@ describe("Generation submit API", () => {
     expect(res.json<{ code: string }>().code).toBe("CONNECTOR_NOT_FOUND");
   });
 
-  it("#8 POST /api/generation/submit — 400 missing prompt", async () => {
+  it("#10 POST /api/generation/submit — 400 missing prompt", async () => {
     const res = await app.inject({
       method:  "POST",
       url:     "/api/generation/submit",
@@ -146,7 +193,7 @@ describe("Generation submit API", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("#9 POST /api/generation/submit — 400 missing type", async () => {
+  it("#11 POST /api/generation/submit — 400 missing type", async () => {
     const res = await app.inject({
       method:  "POST",
       url:     "/api/generation/submit",
@@ -155,7 +202,7 @@ describe("Generation submit API", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("#10 GET /api/generation/:id — 200 with succeeded job", async () => {
+  it("#12 GET /api/generation/:id — 200 with succeeded job fields", async () => {
     const res = await app.inject({ method: "GET", url: `/api/generation/${generatedJobId}` });
     expect(res.statusCode).toBe(200);
     const body = res.json<{ job: GenerationJob }>();
@@ -163,48 +210,60 @@ describe("Generation submit API", () => {
     expect(body.job.status).toBe("succeeded");
     expect(body.job.assetId).toBe(generatedAssetId);
     expect(body.job.finishedAt).not.toBeNull();
+    expect(body.job.attemptCount).toBe(1);
+    expect(body.job.maxAttempts).toBe(3);
+    expect(body.job.nextRetryAt).toBeNull();
   });
 
-  it("#11 GET /api/generation/<random-uuid> — 404", async () => {
+  it("#13 GET /api/generation/<random-uuid> — 404", async () => {
     const res = await app.inject({ method: "GET", url: `/api/generation/${randomUUID()}` });
     expect(res.statusCode).toBe(404);
   });
 
-  it("#12 GET /api/assets?query=cat — FTS finds generated asset by name", async () => {
-    // Asset from #3 has name "a cat in space" which contains "cat"
+  it("#14 GET /api/assets?query=cat — FTS finds generated asset by name", async () => {
     const res = await app.inject({ method: "GET", url: "/api/assets?query=cat" });
     expect(res.statusCode).toBe(200);
     const body = res.json<{ items: { id: string }[]; total: number }>();
     expect(body.items.some(i => i.id === generatedAssetId)).toBe(true);
   });
-
-  it("#13 GET /api/assets/:id — response includes generation fields", async () => {
-    const res = await app.inject({ method: "GET", url: `/api/assets/${generatedAssetId}` });
-    expect(res.statusCode).toBe(200);
-    const body = res.json<AssetBody>();
-    expect(body.sourceConnector).toBe("mock");
-    expect(body.generationPrompt).toBe("a cat in space");
-    expect(body.generationMeta).toBeTruthy();
-  });
 });
 
-// ── Failing connector via extraConnectors ──────────────────────────────────────
+// ── Retry: flaky connector (retryable fail then succeed) ───────────────────
 
-describe("Generation submit — connector failure (502)", () => {
+describe("Generation submit — retryable failure then success", () => {
   const ts2      = Date.now() + 1;
-  const DB_PATH2 = path.join(os.tmpdir(), `starline-gen-fail-${ts2}.db`);
+  const DB_PATH2 = path.join(os.tmpdir(), `starline-gen-flaky-${ts2}.db`);
 
-  const failingConnector: Connector = {
-    id:          "fail-test",
-    name:        "Failing Test Connector",
+  let callCount = 0;
+
+  const flakyConnector: Connector = {
+    id:          "flaky",
+    name:        "Flaky Connector",
     healthCheck: async () => ({ ok: true, latencyMs: 1 }),
-    generate:    async () => { throw new Error("simulated provider failure"); },
+    generate:    async (input) => {
+      callCount++;
+      if (callCount === 1) {
+        throw new Error("transient provider error");
+      }
+      // Second call succeeds — write a real temp file
+      const filePath = path.join(os.tmpdir(), `flaky-${randomUUID()}.txt`);
+      fs.writeFileSync(filePath, `content: ${input.prompt}`);
+      return {
+        filePath,
+        mimeType: "text/plain",
+        name:     "flaky-output",
+        meta:     { model: "flaky-v1", seed: "abc", latencyMs: 1 },
+      };
+    },
   };
 
   let app2: ReturnType<typeof buildServer>;
 
   beforeAll(async () => {
-    app2 = buildServer(DB_PATH2, { extraConnectors: new Map([["fail-test", failingConnector]]) });
+    app2 = buildServer(DB_PATH2, {
+      extraConnectors: new Map([["flaky", flakyConnector]]),
+      retryBaseMs:     10,
+    });
     await app2.ready();
   });
 
@@ -213,17 +272,68 @@ describe("Generation submit — connector failure (502)", () => {
     try { fs.unlinkSync(DB_PATH2); } catch { /* ignore */ }
   });
 
-  it("#14 POST /api/generation/submit — 502 when connector.generate() throws", async () => {
+  it("#15 flaky connector: 202 → retries once → job.status 'succeeded', attemptCount === 2", async () => {
     const res = await app2.inject({
       method:  "POST",
       url:     "/api/generation/submit",
-      payload: { connectorId: "fail-test", prompt: "x", type: "image" },
+      payload: { connectorId: "flaky", prompt: "test retry", type: "image" },
     });
-    expect(res.statusCode).toBe(502);
-    const body = res.json<GenBody>();
-    expect(body.job.status).toBe("failed");
-    expect(body.job.errorCode).toBe("GENERATION_FAILED");
-    expect(body.job.errorMessage).toBe("simulated provider failure");
-    expect(body.asset).toBeNull();
+    expect(res.statusCode).toBe(202);
+    const { job: enqueuedJob } = res.json<EnqueueBody>();
+    expect(enqueuedJob.status).toBe("queued");
+
+    const completedJob = await waitForJob(app2, enqueuedJob.id, 5000);
+    expect(completedJob.status).toBe("succeeded");
+    expect(completedJob.attemptCount).toBe(2);
+    expect(completedJob.assetId).toBeTruthy();
+  });
+});
+
+// ── Retry: non-retryable failure (terminal immediately) ───────────────────
+
+describe("Generation submit — non-retryable failure", () => {
+  const ts3      = Date.now() + 2;
+  const DB_PATH3 = path.join(os.tmpdir(), `starline-gen-nretry-${ts3}.db`);
+
+  const nonRetryableConnector: Connector = {
+    id:          "non-retryable",
+    name:        "Non-Retryable Connector",
+    healthCheck: async () => ({ ok: true, latencyMs: 1 }),
+    generate:    async () => {
+      throw Object.assign(new Error("content policy violation"), { retryable: false });
+    },
+  };
+
+  let app3: ReturnType<typeof buildServer>;
+
+  beforeAll(async () => {
+    app3 = buildServer(DB_PATH3, {
+      extraConnectors: new Map([["non-retryable", nonRetryableConnector]]),
+      retryBaseMs:     10,
+    });
+    await app3.ready();
+  });
+
+  afterAll(async () => {
+    await app3.close();
+    try { fs.unlinkSync(DB_PATH3); } catch { /* ignore */ }
+  });
+
+  it("#16 non-retryable error: 202 → job.status 'failed', attemptCount === 1, no retry", async () => {
+    const res = await app3.inject({
+      method:  "POST",
+      url:     "/api/generation/submit",
+      payload: { connectorId: "non-retryable", prompt: "bad content", type: "image" },
+    });
+    expect(res.statusCode).toBe(202);
+    const { job: enqueuedJob } = res.json<EnqueueBody>();
+    expect(enqueuedJob.status).toBe("queued");
+
+    const completedJob = await waitForJob(app3, enqueuedJob.id, 3000);
+    expect(completedJob.status).toBe("failed");
+    expect(completedJob.errorCode).toBe("GENERATION_FAILED");
+    expect(completedJob.errorMessage).toBe("content policy violation");
+    expect(completedJob.attemptCount).toBe(1);
+    expect(completedJob.nextRetryAt).toBeNull();
   });
 });

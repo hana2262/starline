@@ -11,7 +11,7 @@ import { registerGenerationRoutes } from "./routes/generation.js";
 
 export function buildServer(
   dbPath: string,
-  options?: { extraConnectors?: Map<string, Connector> },
+  options?: { extraConnectors?: Map<string, Connector>; retryBaseMs?: number },
 ) {
   const app = Fastify({ logger: true });
 
@@ -41,7 +41,13 @@ export function buildServer(
 
   const generationService = createGenerationService(
     connectorRegistry, assetRepo, generationRepo, computeFileHash, appDataDir,
+    { retryBaseMs: options?.retryBaseMs },
   );
+
+  // Cancel pending retry timers on server shutdown
+  app.addHook("onClose", async () => {
+    generationService.queue.destroy();
+  });
 
   // Health check
   app.get("/health", async () => ({ status: "ok" }));

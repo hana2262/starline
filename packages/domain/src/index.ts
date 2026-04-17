@@ -5,4 +5,5 @@ export type { AssetService } from "./asset/asset.service.js";
 export { computeFileHash } from "./asset/file.utils.js";
 export { createGenerationService, ConnectorError } from "./generation/generation.service.js";
 export type { GenerationService } from "./generation/generation.service.js";
+export { GenerationQueue } from "./generation/generation.queue.js";
 export type { ListAssetsQuery, AssetListResponse } from "@starline/shared";

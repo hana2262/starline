@@ -10,12 +10,11 @@ export function registerGenerationRoutes(app: FastifyInstance, generationService
     return reply.send(result);
   });
 
-  // Submit generation job — 201 on succeeded, 502 on failed
+  // Submit generation job — always 202 Accepted (async processing)
   app.post("/api/generation/submit", async (req, reply) => {
     const input  = GenerationSubmitSchema.parse(req.body);
-    const result = await generationService.submit(input);
-    const status = result.job.status === "succeeded" ? 201 : 502;
-    return reply.code(status).send(result);
+    const result = await generationService.enqueue(input);
+    return reply.code(202).send(result);
   });
 
   // Get generation job by ID

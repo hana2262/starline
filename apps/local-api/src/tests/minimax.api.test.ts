@@ -1,9 +1,25 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { buildServer } from "../server.js";
 import { MinimaxConnector } from "@starline/connectors";
+import type { GenerationJob } from "@starline/shared";
 import path from "path";
 import os from "os";
 import fs from "fs";
+
+async function waitForJob(
+  app: ReturnType<typeof buildServer>,
+  jobId: string,
+  timeoutMs = 3000,
+): Promise<GenerationJob> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await app.inject({ method: "GET", url: `/api/generation/${jobId}` });
+    const job = res.json<{ job: GenerationJob }>().job;
+    if (job.status !== "queued" && job.status !== "running") return job;
+    await new Promise(r => setTimeout(r, 10));
+  }
+  throw new Error(`Job ${jobId} did not complete within ${timeoutMs}ms`);
+}
 
 // ── mock fetch helper ──────────────────────────────────────────────────────────
 // Produces a sequential mock:
@@ -41,7 +57,7 @@ describe("MiniMax connector (mocked HTTP, injected via extraConnectors)", () => 
   beforeAll(async () => {
     const mockFetch = makeMinimaxFetch();
     const minimax   = new MinimaxConnector("test-api-key", mockFetch as typeof globalThis.fetch);
-    app = buildServer(DB_PATH, { extraConnectors: new Map([["minimax", minimax]]) });
+    app = buildServer(DB_PATH, { extraConnectors: new Map([["minimax", minimax]]), retryBaseMs: 10 });
     await app.ready();
   });
 
@@ -60,34 +76,39 @@ describe("MiniMax connector (mocked HTTP, injected via extraConnectors)", () => 
     expect(typeof body.latencyMs).toBe("number");
   });
 
-  it("#2 POST /api/generation/submit — 201 with minimax metadata", async () => {
+  it("#2 POST /api/generation/submit — 202 queued; job completes with minimax metadata", async () => {
     const res = await app.inject({
       method:  "POST",
       url:     "/api/generation/submit",
       payload: { connectorId: "minimax", prompt: "a glowing neon cat", type: "image" },
     });
-    expect(res.statusCode).toBe(201);
-    const body = res.json<{
-      job: { status: string; connectorId: string };
-      asset: {
-        id: string;
-        filePath: string;
-        sourceConnector: string | null;
-        generationPrompt: string | null;
-        generationMeta: string | null;
-      } | null;
-    }>();
-    expect(body.job.status).toBe("succeeded");
-    expect(body.asset).not.toBeNull();
-    expect(body.asset!.sourceConnector).toBe("minimax");
-    expect(body.asset!.generationPrompt).toBe("a glowing neon cat");
+    expect(res.statusCode).toBe(202);
+    const { job: enqueuedJob } = res.json<{ job: GenerationJob }>();
+    expect(enqueuedJob.status).toBe("queued");
+    expect(enqueuedJob.connectorId).toBe("minimax");
 
-    const meta = JSON.parse(body.asset!.generationMeta!);
+    const completedJob = await waitForJob(app, enqueuedJob.id);
+    expect(completedJob.status).toBe("succeeded");
+    expect(completedJob.assetId).toBeTruthy();
+
+    const assetRes = await app.inject({ method: "GET", url: `/api/assets/${completedJob.assetId}` });
+    expect(assetRes.statusCode).toBe(200);
+    const asset = assetRes.json<{
+      id: string;
+      filePath: string;
+      sourceConnector: string | null;
+      generationPrompt: string | null;
+      generationMeta: string | null;
+    }>();
+    expect(asset.sourceConnector).toBe("minimax");
+    expect(asset.generationPrompt).toBe("a glowing neon cat");
+
+    const meta = JSON.parse(asset.generationMeta!);
     expect(meta.model).toBe("image-01");
     expect(typeof meta.seed).toBe("string");
     expect(typeof meta.latencyMs).toBe("number");
 
-    generatedFilePath = body.asset!.filePath;
+    generatedFilePath = asset.filePath;
   });
 
   it("#3 managed file exists on disk at asset.filePath (not OS temp)", async () => {

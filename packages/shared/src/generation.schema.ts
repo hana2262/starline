@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AssetTypeSchema, AssetResponseSchema } from "./asset.schema.js";
+import { AssetTypeSchema } from "./asset.schema.js";
 
 export const ConnectorHealthResponseSchema = z.object({
   ok:          z.boolean(),
@@ -33,11 +33,13 @@ export const GenerationJobSchema = z.object({
   createdAt:    z.string(),
   startedAt:    z.string().nullable(),
   finishedAt:   z.string().nullable(),
+  attemptCount: z.number().int().nonnegative(),
+  maxAttempts:  z.number().int().positive(),
+  nextRetryAt:  z.string().nullable(),
 });
 export type GenerationJob = z.infer<typeof GenerationJobSchema>;
 
 export const GenerationSubmitResultSchema = z.object({
-  job:   GenerationJobSchema,
-  asset: AssetResponseSchema.nullable(),
+  job: GenerationJobSchema,
 });
 export type GenerationSubmitResult = z.infer<typeof GenerationSubmitResultSchema>;

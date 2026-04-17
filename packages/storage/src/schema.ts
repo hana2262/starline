@@ -57,6 +57,10 @@ export const generations = sqliteTable("generations", {
   createdAt:    text("created_at").notNull(),
   startedAt:    text("started_at"),
   finishedAt:   text("finished_at"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  maxAttempts:  integer("max_attempts").notNull().default(3),
+  nextRetryAt:  text("next_retry_at"),
+  settings:     text("settings"),
 });
 
 export type Generation    = typeof generations.$inferSelect;
