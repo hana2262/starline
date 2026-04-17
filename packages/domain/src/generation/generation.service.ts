@@ -7,6 +7,8 @@ import type {
   ConnectorHealthResponse,
   GenerationSubmitInput,
   GenerationJob,
+  GenerationListQuery,
+  GenerationListResult,
 } from "@starline/shared";
 import type { computeFileHash } from "../asset/file.utils.js";
 import { GenerationQueue } from "./generation.queue.js";
@@ -33,19 +35,43 @@ export class GenerationRetryError extends Error {
   }
 }
 
+export class GenerationCancelError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "JOB_NOT_FOUND" | "JOB_NOT_CANCELLABLE",
+    public readonly jobId: string,
+  ) {
+    super(message);
+    this.name = "GenerationCancelError";
+  }
+}
+
+export class GenerationListError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "INVALID_QUERY",
+  ) {
+    super(message);
+    this.name = "GenerationListError";
+  }
+}
+
 type ConnectorRegistry = Map<string, Connector>;
 type ComputeHashFn = typeof computeFileHash;
+type GenerationSettings = { tags?: string[]; name?: string; settings?: Record<string, unknown> };
 
-/** Simple MIME → file extension map for common generation types. */
 const MIME_EXT: Record<string, string> = {
-  "image/png":  "png",
+  "image/png": "png",
   "image/jpeg": "jpg",
   "image/webp": "webp",
-  "video/mp4":  "mp4",
-  "audio/wav":  "wav",
+  "video/mp4": "mp4",
+  "audio/wav": "wav",
   "audio/mpeg": "mp3",
   "text/plain": "txt",
 };
+
+const USER_CANCEL_REASON = "user_requested";
+const USER_CANCEL_MESSAGE = "Cancellation requested by user.";
 
 function extFor(mimeType: string): string {
   return MIME_EXT[mimeType] ?? "bin";
@@ -53,21 +79,25 @@ function extFor(mimeType: string): string {
 
 function toJobResponse(row: GenerationRow): GenerationJob {
   return {
-    id:           row.id,
-    connectorId:  row.connectorId,
-    prompt:       row.prompt,
-    type:         row.type as GenerationJob["type"],
-    projectId:    row.projectId ?? null,
-    status:       row.status as GenerationJob["status"],
-    assetId:      row.assetId ?? null,
-    errorCode:    row.errorCode ?? null,
+    id: row.id,
+    connectorId: row.connectorId,
+    prompt: row.prompt,
+    type: row.type as GenerationJob["type"],
+    projectId: row.projectId ?? null,
+    status: row.status as GenerationJob["status"],
+    assetId: row.assetId ?? null,
+    errorCode: row.errorCode ?? null,
     errorMessage: row.errorMessage ?? null,
-    createdAt:    row.createdAt,
-    startedAt:    row.startedAt ?? null,
-    finishedAt:   row.finishedAt ?? null,
+    cancelReason: row.cancelReason ?? null,
+    cancelMessage: row.cancelMessage ?? null,
+    cancelRequestedAt: row.cancelRequestedAt ?? null,
+    cancelledAt: row.cancelledAt ?? null,
+    createdAt: row.createdAt,
+    startedAt: row.startedAt ?? null,
+    finishedAt: row.finishedAt ?? null,
     attemptCount: row.attemptCount,
-    maxAttempts:  row.maxAttempts,
-    nextRetryAt:  row.nextRetryAt ?? null,
+    maxAttempts: row.maxAttempts,
+    nextRetryAt: row.nextRetryAt ?? null,
   };
 }
 
@@ -75,86 +105,136 @@ function tryUnlink(filePath: string): void {
   try { unlinkSync(filePath); } catch { /* best-effort */ }
 }
 
+function encodeCursor(createdAt: string, id: string): string {
+  return Buffer.from(JSON.stringify({ createdAt, id }), "utf8").toString("base64url");
+}
+
+function decodeCursor(cursor: string): { createdAt: string; id: string } {
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as {
+      createdAt?: unknown;
+      id?: unknown;
+    };
+    if (typeof parsed.createdAt !== "string" || typeof parsed.id !== "string") {
+      throw new Error("Invalid cursor shape");
+    }
+    return { createdAt: parsed.createdAt, id: parsed.id };
+  } catch {
+    throw new GenerationListError("Invalid generation list query.", "INVALID_QUERY");
+  }
+}
+
+function parseSettings(settings: string | null): GenerationSettings {
+  if (!settings) return {};
+  return JSON.parse(settings) as GenerationSettings;
+}
+
 export function createGenerationService(
-  registry:    ConnectorRegistry,
-  assetRepo:   AssetRepository,
-  genRepo:     GenerationRepository,
+  registry: ConnectorRegistry,
+  assetRepo: AssetRepository,
+  genRepo: GenerationRepository,
   computeHash: ComputeHashFn,
-  appDataDir:  string,
-  opts?:       { retryBaseMs?: number; maxRetryDelayMs?: number },
+  appDataDir: string,
+  opts?: { retryBaseMs?: number; maxRetryDelayMs?: number },
 ) {
-  const retryBaseMs     = opts?.retryBaseMs     ?? 1000;
+  const retryBaseMs = opts?.retryBaseMs ?? 1000;
   const maxRetryDelayMs = opts?.maxRetryDelayMs ?? 30_000;
 
   function resolve(id: string): Connector {
-    const c = registry.get(id);
-    if (!c) throw new ConnectorError(`Unknown connector: ${id}`, "CONNECTOR_NOT_FOUND", id);
-    return c;
+    const connector = registry.get(id);
+    if (!connector) throw new ConnectorError(`Unknown connector: ${id}`, "CONNECTOR_NOT_FOUND", id);
+    return connector;
   }
 
-  // queue is referenced inside executeJob (closure); executeJob is a hoisted function declaration
-  const queue = new GenerationQueue(executeJob);
+  function markCancelledFromRow(row: GenerationRow, fallbackMessage?: string): void {
+    const cancelledAt = new Date().toISOString();
+    genRepo.markCancelled(
+      row.id,
+      row.cancelReason ?? USER_CANCEL_REASON,
+      row.cancelMessage ?? fallbackMessage ?? USER_CANCEL_MESSAGE,
+      row.cancelRequestedAt ?? cancelledAt,
+      cancelledAt,
+    );
+  }
 
-  // ── private helpers ─────────────────────────────────────────────────────────
+  function getCurrentJobOrCancel(jobId: string): GenerationRow | null {
+    const row = genRepo.getById(jobId);
+    if (!row) return null;
+    if (row.status === "cancelled") return null;
+    if (row.status === "cancelling") {
+      markCancelledFromRow(row);
+      return null;
+    }
+    return row;
+  }
 
-  function handleFailure(
-    jobId:    string,
-    code:     string,
-    err:      unknown,
-  ): void {
+  function handleFailure(jobId: string, code: string, err: unknown): void {
     const retryable = (err as { retryable?: boolean }).retryable !== false;
     const row = genRepo.getById(jobId);
     if (!row) return;
 
+    if (row.status === "cancelling" || row.status === "cancelled") {
+      markCancelledFromRow(row);
+      return;
+    }
+
     if (retryable && row.attemptCount < row.maxAttempts) {
-      const delay      = Math.min(Math.pow(2, row.attemptCount - 1) * retryBaseMs, maxRetryDelayMs);
+      const delay = Math.min(Math.pow(2, row.attemptCount - 1) * retryBaseMs, maxRetryDelayMs);
       const nextRetryAt = new Date(Date.now() + delay).toISOString();
       genRepo.markRetrying(jobId, nextRetryAt);
       queue.scheduleRetry(jobId, delay);
-    } else {
-      genRepo.markFailed(jobId, code, (err as Error).message ?? String(err), retryable);
+      return;
     }
+
+    genRepo.markFailed(jobId, code, (err as Error).message ?? String(err), retryable);
   }
 
-  // ── job executor (hoisted, so GenerationQueue constructor can reference it) ─
-
   async function executeJob(jobId: string): Promise<void> {
-    // 1. Fetch current job row
     const row = genRepo.getById(jobId);
     if (!row) return;
+    if (row.status === "cancelled") return;
+    if (row.status === "cancelling") {
+      markCancelledFromRow(row);
+      return;
+    }
 
-    // 2. Resolve connector — terminal if missing (config error)
     const connector = registry.get(row.connectorId);
     if (!connector) {
       genRepo.markFailed(jobId, "CONNECTOR_NOT_FOUND", `Unknown connector: ${row.connectorId}`, false);
       return;
     }
 
-    // 3. Mark running — increments attemptCount
     genRepo.markRunning(jobId);
+    const runningRow = getCurrentJobOrCancel(jobId);
+    if (!runningRow) return;
 
-    // 4. Run generation — connector writes to OS temp dir
-    const inputJson: { tags?: string[]; name?: string; settings?: Record<string, unknown> } =
-      row.settings ? (JSON.parse(row.settings) as { tags?: string[]; name?: string; settings?: Record<string, unknown> }) : {};
-    const inputTags         = inputJson.tags     ?? [];
+    const inputJson = parseSettings(runningRow.settings ?? null);
+    const inputTags = inputJson.tags ?? [];
     const inputNameOverride = inputJson.name;
-    const inputSettings     = inputJson.settings;
+    const inputSettings = inputJson.settings;
 
     let output: GenerateOutput;
     try {
       output = await connector.generate({
-        prompt:    row.prompt,
-        type:      row.type as GenerateInput["type"],
-        projectId: row.projectId ?? undefined,
-        settings:  inputSettings,
+        prompt: runningRow.prompt,
+        type: runningRow.type as GenerateInput["type"],
+        projectId: runningRow.projectId ?? undefined,
+        settings: inputSettings,
       });
     } catch (err) {
       handleFailure(jobId, "GENERATION_FAILED", err);
       return;
     }
 
-    // 5. Hash the temp file
-    let hash: string, size: number, mimeType: string;
+    const afterGenerate = getCurrentJobOrCancel(jobId);
+    if (!afterGenerate) {
+      tryUnlink(output.filePath);
+      return;
+    }
+
+    let hash: string;
+    let size: number;
+    let mimeType: string;
     try {
       ({ hash, size, mimeType } = await computeHash(output.filePath));
     } catch (err) {
@@ -163,9 +243,8 @@ export function createGenerationService(
       return;
     }
 
-    // 6. Copy temp → managed path
-    const assetId     = randomUUID();
-    const ext         = extFor(output.mimeType ?? mimeType);
+    const assetId = randomUUID();
+    const ext = extFor(output.mimeType ?? mimeType);
     const managedPath = path.join(appDataDir, `${assetId}.${ext}`);
     mkdirSync(appDataDir, { recursive: true });
     try {
@@ -176,24 +255,29 @@ export function createGenerationService(
       return;
     }
 
-    // 7. Persist asset row — no content-hash dedup
+    const beforePersist = getCurrentJobOrCancel(jobId);
+    if (!beforePersist) {
+      tryUnlink(managedPath);
+      tryUnlink(output.filePath);
+      return;
+    }
+
     let assetRow: AssetRow;
     try {
-      const currentRow = genRepo.getById(jobId)!;
       assetRow = assetRepo.create({
-        id:               assetId,
-        projectId:        currentRow.projectId ?? null,
-        name:             inputNameOverride ?? output.name,
-        type:             currentRow.type as AssetRow["type"],
-        filePath:         managedPath,
-        fileSize:         size,
-        mimeType:         output.mimeType ?? mimeType,
-        contentHash:      hash,
-        tags:             inputTags,
-        description:      null,
-        sourceConnector:  currentRow.connectorId,
-        generationPrompt: currentRow.prompt,
-        generationMeta:   JSON.stringify(output.meta),
+        id: assetId,
+        projectId: beforePersist.projectId ?? null,
+        name: inputNameOverride ?? output.name,
+        type: beforePersist.type as AssetRow["type"],
+        filePath: managedPath,
+        fileSize: size,
+        mimeType: output.mimeType ?? mimeType,
+        contentHash: hash,
+        tags: inputTags,
+        description: null,
+        sourceConnector: beforePersist.connectorId,
+        generationPrompt: beforePersist.prompt,
+        generationMeta: JSON.stringify(output.meta),
       });
     } catch (err) {
       tryUnlink(managedPath);
@@ -202,14 +286,17 @@ export function createGenerationService(
       return;
     }
 
-    // 8. Mark succeeded
-    genRepo.markSucceeded(jobId, assetRow.id);
+    const beforeSuccess = getCurrentJobOrCancel(jobId);
+    if (!beforeSuccess) {
+      tryUnlink(output.filePath);
+      return;
+    }
 
-    // 9. Clean up temp file best-effort
+    genRepo.markSucceeded(jobId, assetRow.id);
     tryUnlink(output.filePath);
   }
 
-  // ── public API ───────────────────────────────────────────────────────────────
+  const queue = new GenerationQueue(executeJob);
 
   return {
     async test(connectorId: string): Promise<ConnectorHealthResponse> {
@@ -218,39 +305,74 @@ export function createGenerationService(
         const result = await connector.healthCheck();
         return { ...result, connectorId };
       } catch (err) {
-        throw new ConnectorError(
-          (err as Error).message,
-          "HEALTH_CHECK_FAILED",
-          connectorId,
-        );
+        throw new ConnectorError((err as Error).message, "HEALTH_CHECK_FAILED", connectorId);
       }
     },
 
     async enqueue(input: GenerationSubmitInput): Promise<{ job: GenerationJob }> {
-      // Validate connector exists before creating a job row
       resolve(input.connectorId);
 
       const job = genRepo.create({
         connectorId: input.connectorId,
-        prompt:      input.prompt,
-        type:        input.type,
-        projectId:   input.projectId ?? null,
+        prompt: input.prompt,
+        type: input.type,
+        projectId: input.projectId ?? null,
         maxAttempts: 3,
-        settings:    JSON.stringify({
-          tags:     input.tags     ?? [],
-          name:     input.name,
+        settings: JSON.stringify({
+          tags: input.tags ?? [],
+          name: input.name,
           settings: input.settings,
         }),
       });
 
       queue.push(job.id);
-
       return { job: toJobResponse(job) };
     },
 
     getJob(jobId: string): GenerationJob | null {
       const row = genRepo.getById(jobId);
       return row ? toJobResponse(row) : null;
+    },
+
+    listJobs(query: GenerationListQuery): GenerationListResult {
+      const page = genRepo.list({
+        status: query.status,
+        connectorId: query.connectorId,
+        projectId: query.projectId,
+        cursor: query.cursor ? decodeCursor(query.cursor) : undefined,
+        limit: query.limit,
+      });
+
+      return {
+        items: page.items.map(toJobResponse),
+        nextCursor: page.nextCursor ? encodeCursor(page.nextCursor.createdAt, page.nextCursor.id) : null,
+      };
+    },
+
+    cancel(jobId: string): { job: GenerationJob } {
+      const row = genRepo.getById(jobId);
+      if (!row) {
+        throw new GenerationCancelError(`Generation job not found: ${jobId}`, "JOB_NOT_FOUND", jobId);
+      }
+
+      if (row.status === "cancelling") {
+        return { job: toJobResponse(row) };
+      }
+
+      const requestedAt = new Date().toISOString();
+      if (row.status === "queued") {
+        genRepo.markCancelled(jobId, USER_CANCEL_REASON, USER_CANCEL_MESSAGE, requestedAt, requestedAt);
+      } else if (row.status === "running") {
+        genRepo.markCancelling(jobId, USER_CANCEL_REASON, USER_CANCEL_MESSAGE, requestedAt);
+      } else {
+        throw new GenerationCancelError(`Generation job is not cancellable: ${jobId}`, "JOB_NOT_CANCELLABLE", jobId);
+      }
+
+      const updated = genRepo.getById(jobId);
+      if (!updated) {
+        throw new GenerationCancelError(`Generation job not found: ${jobId}`, "JOB_NOT_FOUND", jobId);
+      }
+      return { job: toJobResponse(updated) };
     },
 
     retry(jobId: string): { job: GenerationJob } {
@@ -276,6 +398,11 @@ export function createGenerationService(
     },
 
     recoverPendingJobs(): void {
+      const cancellingJobs = genRepo.listCancelling();
+      for (const row of cancellingJobs) {
+        markCancelledFromRow(row, "Cancellation completed during recovery.");
+      }
+
       const runningJobs = genRepo.listRunning();
       for (const row of runningJobs) {
         genRepo.markFailed(
@@ -292,7 +419,6 @@ export function createGenerationService(
       }
     },
 
-    /** Exposed for server lifecycle management and test synchronisation. */
     queue,
   };
 }

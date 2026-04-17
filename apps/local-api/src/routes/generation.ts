@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { GenerationService } from "@starline/domain";
-import { ConnectorError, GenerationRetryError } from "@starline/domain";
-import { GenerationSubmitSchema } from "@starline/shared";
+import { ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError } from "@starline/domain";
+import { GenerationSubmitSchema, GenerationListQuerySchema } from "@starline/shared";
 
 export function registerGenerationRoutes(app: FastifyInstance, generationService: GenerationService) {
   // Connector health check
@@ -24,10 +24,21 @@ export function registerGenerationRoutes(app: FastifyInstance, generationService
     return reply.send({ job });
   });
 
+  app.get("/api/generation", async (req, reply) => {
+    const query = GenerationListQuerySchema.parse(req.query);
+    const result = generationService.listJobs(query);
+    return reply.send(result);
+  });
+
   app.post<{ Params: { id: string } }>("/api/generation/:id/retry", async (req, reply) => {
     const result = generationService.retry(req.params.id);
     return reply.code(202).send(result);
   });
+
+  app.post<{ Params: { id: string } }>("/api/generation/:id/cancel", async (req, reply) => {
+    const result = generationService.cancel(req.params.id);
+    return reply.code(202).send(result);
+  });
 }
 
-export { ConnectorError, GenerationRetryError };
+export { ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError };

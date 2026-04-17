@@ -26,10 +26,14 @@ export const GenerationJobSchema = z.object({
   prompt:       z.string(),
   type:         AssetTypeSchema,
   projectId:    z.string().nullable(),
-  status:       z.enum(["queued", "running", "succeeded", "failed"]),
+  status:       z.enum(["queued", "running", "cancelling", "cancelled", "succeeded", "failed"]),
   assetId:      z.string().nullable(),
   errorCode:    z.string().nullable(),
   errorMessage: z.string().nullable(),
+  cancelReason: z.string().nullable(),
+  cancelMessage:z.string().nullable(),
+  cancelRequestedAt: z.string().nullable(),
+  cancelledAt:  z.string().nullable(),
   createdAt:    z.string(),
   startedAt:    z.string().nullable(),
   finishedAt:   z.string().nullable(),
@@ -43,3 +47,18 @@ export const GenerationSubmitResultSchema = z.object({
   job: GenerationJobSchema,
 });
 export type GenerationSubmitResult = z.infer<typeof GenerationSubmitResultSchema>;
+
+export const GenerationListQuerySchema = z.object({
+  status: z.enum(["queued", "running", "cancelling", "cancelled", "succeeded", "failed"]).optional(),
+  connectorId: z.string().min(1).optional(),
+  projectId: z.string().min(1).optional(),
+  cursor: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type GenerationListQuery = z.infer<typeof GenerationListQuerySchema>;
+
+export const GenerationListResultSchema = z.object({
+  items: z.array(GenerationJobSchema),
+  nextCursor: z.string().nullable(),
+});
+export type GenerationListResult = z.infer<typeof GenerationListResultSchema>;
