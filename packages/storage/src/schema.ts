@@ -60,6 +60,7 @@ export const generations = sqliteTable("generations", {
   attemptCount: integer("attempt_count").notNull().default(0),
   maxAttempts:  integer("max_attempts").notNull().default(3),
   nextRetryAt:  text("next_retry_at"),
+  retryable:    integer("retryable"),
   settings:     text("settings"),
 });
 

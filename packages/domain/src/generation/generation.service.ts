@@ -22,6 +22,17 @@ export class ConnectorError extends Error {
   }
 }
 
+export class GenerationRetryError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "JOB_NOT_FOUND" | "JOB_NOT_FAILED" | "JOB_NOT_RETRYABLE",
+    public readonly jobId: string,
+  ) {
+    super(message);
+    this.name = "GenerationRetryError";
+  }
+}
+
 type ConnectorRegistry = Map<string, Connector>;
 type ComputeHashFn = typeof computeFileHash;
 
@@ -101,7 +112,7 @@ export function createGenerationService(
       genRepo.markRetrying(jobId, nextRetryAt);
       queue.scheduleRetry(jobId, delay);
     } else {
-      genRepo.markFailed(jobId, code, (err as Error).message ?? String(err));
+      genRepo.markFailed(jobId, code, (err as Error).message ?? String(err), retryable);
     }
   }
 
@@ -115,7 +126,7 @@ export function createGenerationService(
     // 2. Resolve connector — terminal if missing (config error)
     const connector = registry.get(row.connectorId);
     if (!connector) {
-      genRepo.markFailed(jobId, "CONNECTOR_NOT_FOUND", `Unknown connector: ${row.connectorId}`);
+      genRepo.markFailed(jobId, "CONNECTOR_NOT_FOUND", `Unknown connector: ${row.connectorId}`, false);
       return;
     }
 
@@ -240,6 +251,28 @@ export function createGenerationService(
     getJob(jobId: string): GenerationJob | null {
       const row = genRepo.getById(jobId);
       return row ? toJobResponse(row) : null;
+    },
+
+    retry(jobId: string): { job: GenerationJob } {
+      const row = genRepo.getById(jobId);
+      if (!row) {
+        throw new GenerationRetryError(`Generation job not found: ${jobId}`, "JOB_NOT_FOUND", jobId);
+      }
+      if (row.status !== "failed") {
+        throw new GenerationRetryError(`Generation job is not failed: ${jobId}`, "JOB_NOT_FAILED", jobId);
+      }
+      if (row.retryable !== 1) {
+        throw new GenerationRetryError(`Generation job is not retryable: ${jobId}`, "JOB_NOT_RETRYABLE", jobId);
+      }
+
+      genRepo.requeue(jobId);
+      const queued = genRepo.getById(jobId);
+      if (!queued) {
+        throw new GenerationRetryError(`Generation job not found: ${jobId}`, "JOB_NOT_FOUND", jobId);
+      }
+
+      queue.push(jobId);
+      return { job: toJobResponse(queued) };
     },
 
     /** Exposed for server lifecycle management and test synchronisation. */

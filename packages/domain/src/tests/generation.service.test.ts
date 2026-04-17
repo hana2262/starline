@@ -64,6 +64,7 @@ function makeGenerationRow(overrides: Partial<GenerationRow> = {}): GenerationRo
     attemptCount: 0,
     maxAttempts:  3,
     nextRetryAt:  null,
+    retryable:    null,
     settings:     null,
     ...overrides,
   };
@@ -118,13 +119,27 @@ function makeGenRepo(overrides: Partial<GenerationRepository> = {}): GenerationR
       stored = { ...stored, status: "running", startedAt: "2026-01-01T00:00:01.000Z", attemptCount: stored.attemptCount + 1, nextRetryAt: null };
     }),
     markSucceeded: vi.fn().mockImplementation((_id: string, assetId: string) => {
-      stored = { ...stored, status: "succeeded", assetId, finishedAt: "2026-01-01T00:00:02.000Z" };
+      stored = { ...stored, status: "succeeded", assetId, finishedAt: "2026-01-01T00:00:02.000Z", errorCode: null, errorMessage: null, retryable: null };
     }),
-    markFailed: vi.fn().mockImplementation((_id: string, code: string, msg: string) => {
-      stored = { ...stored, status: "failed", errorCode: code, errorMessage: msg, finishedAt: "2026-01-01T00:00:02.000Z" };
+    markFailed: vi.fn().mockImplementation((_id: string, code: string, msg: string, retryable: boolean) => {
+      stored = { ...stored, status: "failed", errorCode: code, errorMessage: msg, finishedAt: "2026-01-01T00:00:02.000Z", retryable: retryable ? 1 : 0, nextRetryAt: null };
     }),
     markRetrying: vi.fn().mockImplementation((_id: string, nextRetryAt: string) => {
-      stored = { ...stored, status: "queued", nextRetryAt, startedAt: null };
+      stored = { ...stored, status: "queued", nextRetryAt, startedAt: null, finishedAt: null, errorCode: null, errorMessage: null, retryable: null };
+    }),
+    requeue: vi.fn().mockImplementation(() => {
+      stored = {
+        ...stored,
+        status:       "queued",
+        assetId:      null,
+        errorCode:    null,
+        errorMessage: null,
+        startedAt:    null,
+        finishedAt:   null,
+        attemptCount: 0,
+        nextRetryAt:  null,
+        retryable:    null,
+      };
     }),
     getNextQueued: vi.fn().mockReturnValue(undefined),
     ...overrides,
@@ -306,7 +321,7 @@ describe("generationService — retryable failure", () => {
     await service.enqueue({ connectorId: "mock", prompt: "x", type: "image" });
     await service.queue.waitForIdle();
 
-    expect(genRepo.markFailed).toHaveBeenCalledWith("job-1", "GENERATION_FAILED", "always fails");
+    expect(genRepo.markFailed).toHaveBeenCalledWith("job-1", "GENERATION_FAILED", "always fails", true);
     expect(genRepo.markRetrying).not.toHaveBeenCalled();
   });
 });
@@ -325,7 +340,7 @@ describe("generationService — non-retryable failure", () => {
     await service.enqueue({ connectorId: "mock", prompt: "x", type: "image" });
     await service.queue.waitForIdle();
 
-    expect(genRepo.markFailed).toHaveBeenCalledWith("job-1", "GENERATION_FAILED", "content policy");
+    expect(genRepo.markFailed).toHaveBeenCalledWith("job-1", "GENERATION_FAILED", "content policy", false);
     expect(genRepo.markRetrying).not.toHaveBeenCalled();
   });
 });
@@ -370,5 +385,61 @@ describe("generationService.getJob", () => {
     });
     const job = service.getJob("no-such-id");
     expect(job).toBeNull();
+  });
+});
+
+describe("generationService.retry", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("requeues a failed retryable job and returns queued job", () => {
+    const failedRow = makeGenerationRow({
+      status:       "failed",
+      errorCode:    "GENERATION_FAILED",
+      errorMessage: "transient provider error",
+      attemptCount: 3,
+      retryable:    1,
+      finishedAt:   "2026-01-01T00:00:02.000Z",
+    });
+    const { service, genRepo } = makeService({}, {}, {
+      getById: vi.fn()
+        .mockReturnValueOnce(failedRow)
+        .mockReturnValueOnce({ ...failedRow, status: "queued", errorCode: null, errorMessage: null, attemptCount: 0, retryable: null, finishedAt: null }),
+    });
+
+    const result = service.retry("job-1");
+
+    expect(genRepo.requeue).toHaveBeenCalledWith("job-1");
+    expect(result.job.status).toBe("queued");
+    expect(result.job.attemptCount).toBe(0);
+    expect(result.job.errorCode).toBeNull();
+  });
+
+  it("throws JOB_NOT_FOUND when job does not exist", () => {
+    const { service } = makeService({}, {}, {
+      getById: vi.fn().mockReturnValue(undefined),
+    });
+
+    expect(() => service.retry("missing")).toThrowError(/not found/i);
+  });
+
+  it("throws JOB_NOT_FAILED when job is not failed", () => {
+    const { service } = makeService({}, {}, {
+      getById: vi.fn().mockReturnValue(makeGenerationRow({ status: "succeeded" })),
+    });
+
+    expect(() => service.retry("job-1")).toThrowError(/not failed/i);
+  });
+
+  it("throws JOB_NOT_RETRYABLE when failed job is marked non-retryable", () => {
+    const { service } = makeService({}, {}, {
+      getById: vi.fn().mockReturnValue(makeGenerationRow({
+        status:       "failed",
+        errorCode:    "GENERATION_FAILED",
+        errorMessage: "content policy",
+        retryable:    0,
+      })),
+    });
+
+    expect(() => service.retry("job-1")).toThrowError(/not retryable/i);
   });
 });

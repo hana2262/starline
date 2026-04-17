@@ -37,6 +37,7 @@ export function createGenerationRepository(db: Db) {
         attemptCount: 0,
         maxAttempts:  input.maxAttempts ?? 3,
         nextRetryAt:  null,
+        retryable:    null,
         settings:     input.settings ?? null,
       };
       db.insert(generations).values(row).run();
@@ -61,21 +62,38 @@ export function createGenerationRepository(db: Db) {
 
     markSucceeded(id: string, assetId: string): void {
       db.update(generations)
-        .set({ status: "succeeded", assetId, finishedAt: now() })
+        .set({ status: "succeeded", assetId, finishedAt: now(), errorCode: null, errorMessage: null, retryable: null })
         .where(eq(generations.id, id))
         .run();
     },
 
-    markFailed(id: string, errorCode: string, errorMessage: string): void {
+    markFailed(id: string, errorCode: string, errorMessage: string, retryable: boolean): void {
       db.update(generations)
-        .set({ status: "failed", errorCode, errorMessage, finishedAt: now() })
+        .set({ status: "failed", errorCode, errorMessage, finishedAt: now(), retryable: retryable ? 1 : 0, nextRetryAt: null })
         .where(eq(generations.id, id))
         .run();
     },
 
     markRetrying(id: string, nextRetryAt: string): void {
       db.update(generations)
-        .set({ status: "queued", nextRetryAt, startedAt: null })
+        .set({ status: "queued", nextRetryAt, startedAt: null, finishedAt: null, errorCode: null, errorMessage: null, retryable: null })
+        .where(eq(generations.id, id))
+        .run();
+    },
+
+    requeue(id: string): void {
+      db.update(generations)
+        .set({
+          status:       "queued",
+          assetId:      null,
+          errorCode:    null,
+          errorMessage: null,
+          startedAt:    null,
+          finishedAt:   null,
+          attemptCount: 0,
+          nextRetryAt:  null,
+          retryable:    null,
+        })
         .where(eq(generations.id, id))
         .run();
     },

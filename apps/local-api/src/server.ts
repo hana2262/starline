@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import path from "path";
 import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository } from "@starline/storage";
-import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError } from "@starline/domain";
+import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError } from "@starline/domain";
 import { MockConnector, MinimaxConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
 import { runMigrations } from "@starline/storage/src/migrate.js";
@@ -65,6 +65,14 @@ export function buildServer(
         error:       err.message,
         code:        err.code,
         connectorId: err.connectorId,
+      });
+    }
+    if (err instanceof GenerationRetryError) {
+      const status = err.code === "JOB_NOT_FOUND" ? 404 : 409;
+      return reply.code(status).send({
+        error: err.message,
+        code: err.code,
+        jobId: err.jobId,
       });
     }
     if (err instanceof AssetImportError) {
