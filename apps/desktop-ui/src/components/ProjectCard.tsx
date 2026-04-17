@@ -3,15 +3,21 @@ import { useArchiveProject } from "../hooks/useProjects.js";
 
 interface Props {
   project: ProjectResponse;
+  onOpen?: (projectId: string) => void;
 }
 
-export default function ProjectCard({ project }: Props) {
+export default function ProjectCard({ project, onOpen }: Props) {
   const archive = useArchiveProject();
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-start justify-between hover:shadow-sm transition-shadow">
       <div>
-        <p className="font-medium text-gray-900">{project.name}</p>
+        <button
+          onClick={() => onOpen?.(project.id)}
+          className="font-medium text-gray-900 hover:text-blue-600 text-left"
+        >
+          {project.name}
+        </button>
         {project.description && (
           <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">
             {project.description}

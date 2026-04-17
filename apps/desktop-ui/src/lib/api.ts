@@ -2,6 +2,11 @@ import type {
   ProjectResponse,
   CreateProjectInput,
   UpdateProjectInput,
+  AssetResponse,
+  AssetListResponse,
+  ImportAssetInput,
+  ImportAssetResult,
+  ListAssetsQuery,
 } from "@starline/shared";
 
 const BASE = "/api";
@@ -20,6 +25,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const projectsApi = {
   list: () => request<ProjectResponse[]>("/projects"),
+  getById: (id: string) => request<ProjectResponse>(`/projects/${id}`),
   create: (input: CreateProjectInput) =>
     request<ProjectResponse>("/projects", {
       method: "POST",
@@ -32,4 +38,26 @@ export const projectsApi = {
     }),
   archive: (id: string) =>
     request<ProjectResponse>(`/projects/${id}/archive`, { method: "POST" }),
+};
+
+function toQueryString(query: ListAssetsQuery): string {
+  const params = new URLSearchParams();
+  if (query.query) params.set("query", query.query);
+  if (query.projectId) params.set("projectId", query.projectId);
+  if (query.type) params.set("type", query.type);
+  params.set("limit", String(query.limit));
+  params.set("offset", String(query.offset));
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+export const assetsApi = {
+  list: (query: ListAssetsQuery) =>
+    request<AssetListResponse>(`/assets${toQueryString(query)}`),
+  getById: (id: string) => request<AssetResponse>(`/assets/${id}`),
+  import: (input: ImportAssetInput) =>
+    request<ImportAssetResult>("/assets/import", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 };

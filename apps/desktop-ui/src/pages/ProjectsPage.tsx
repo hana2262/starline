@@ -3,7 +3,11 @@ import { useProjects } from "../hooks/useProjects.js";
 import ProjectList from "../components/ProjectList.js";
 import ProjectCreateModal from "../components/ProjectCreateModal.js";
 
-export default function ProjectsPage() {
+interface Props {
+  onOpenProject?: (projectId: string) => void;
+}
+
+export default function ProjectsPage({ onOpenProject }: Props) {
   const [showCreate, setShowCreate] = useState(false);
   const { data: projects, isLoading, isError, error } = useProjects();
 
@@ -23,7 +27,7 @@ export default function ProjectsPage() {
       {isError && (
         <p className="text-red-600 text-sm">Error: {String(error)}</p>
       )}
-      {projects && <ProjectList projects={projects} />}
+      {projects && <ProjectList projects={projects} onOpenProject={onOpenProject} />}
 
       {showCreate && (
         <ProjectCreateModal onClose={() => setShowCreate(false)} />
