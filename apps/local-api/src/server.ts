@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import type { FastifyBaseLogger } from "fastify";
 import path from "path";
 import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository } from "@starline/storage";
 import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError } from "@starline/domain";
@@ -9,9 +10,30 @@ import { registerProjectRoutes } from "./routes/projects.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerGenerationRoutes } from "./routes/generation.js";
 
+function resolveGenerationConcurrency(
+  envValue: string | undefined,
+  logger: FastifyBaseLogger,
+  override?: number,
+): number {
+  if (override !== undefined) return override;
+  if (envValue === undefined) return 1;
+
+  const parsed = Number(envValue);
+  if (Number.isInteger(parsed) && parsed >= 2 && parsed <= 4) {
+    return parsed;
+  }
+
+  logger.warn({
+    event: "generation.concurrency.invalid",
+    configuredValue: envValue,
+    fallback: 1,
+  }, "invalid generation concurrency, using default");
+  return 1;
+}
+
 export function buildServer(
   dbPath: string,
-  options?: { extraConnectors?: Map<string, Connector>; retryBaseMs?: number },
+  options?: { extraConnectors?: Map<string, Connector>; retryBaseMs?: number; generationConcurrency?: number },
 ) {
   const app = Fastify({ logger: true });
 
@@ -38,10 +60,19 @@ export function buildServer(
   }
 
   options?.extraConnectors?.forEach((c, id) => connectorRegistry.set(id, c));
+  const generationConcurrency = resolveGenerationConcurrency(
+    process.env["GENERATION_CONCURRENCY"],
+    app.log,
+    options?.generationConcurrency,
+  );
+  app.log.info({
+    event: "generation.concurrency.configured",
+    generationConcurrency,
+  }, "generation concurrency configured");
 
   const generationService = createGenerationService(
     connectorRegistry, assetRepo, generationRepo, computeFileHash, appDataDir,
-    { retryBaseMs: options?.retryBaseMs },
+    { retryBaseMs: options?.retryBaseMs, concurrency: generationConcurrency, logger: app.log },
   );
 
   generationService.recoverPendingJobs();

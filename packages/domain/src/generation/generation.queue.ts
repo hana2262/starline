@@ -1,13 +1,16 @@
 export class GenerationQueue {
   private readonly pending: string[] = [];
-  private draining = false;
   private readonly retryTimers: NodeJS.Timeout[] = [];
+  private activeCount = 0;
 
-  constructor(private readonly executor: (jobId: string) => Promise<void>) {}
+  constructor(
+    private readonly executor: (jobId: string) => Promise<void>,
+    private readonly concurrency = 1,
+  ) {}
 
   push(jobId: string): void {
     this.pending.push(jobId);
-    void this.drain();
+    this.scheduleDrain();
   }
 
   scheduleRetry(jobId: string, delayMs: number): void {
@@ -23,25 +26,27 @@ export class GenerationQueue {
 
   /** Wait until the queue has no pending or in-flight work. Used in tests only. */
   async waitForIdle(): Promise<void> {
-    while (this.draining || this.pending.length > 0) {
+    while (this.activeCount > 0 || this.pending.length > 0) {
       await new Promise<void>(r => setTimeout(r, 0));
     }
   }
 
-  private async drain(): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
+  private scheduleDrain(): void {
+    while (this.activeCount < this.concurrency && this.pending.length > 0) {
+      const jobId = this.pending.shift()!;
+      this.activeCount++;
+      void this.runJob(jobId);
+    }
+  }
+
+  private async runJob(jobId: string): Promise<void> {
     try {
-      while (this.pending.length > 0) {
-        const jobId = this.pending.shift()!;
-        try {
-          await this.executor(jobId);
-        } catch {
-          // executor handles its own errors; this is a safety net
-        }
-      }
+      await this.executor(jobId);
+    } catch {
+      // executor handles its own errors; this is a safety net
     } finally {
-      this.draining = false;
+      this.activeCount--;
+      this.scheduleDrain();
     }
   }
 }

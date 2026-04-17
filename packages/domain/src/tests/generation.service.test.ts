@@ -235,7 +235,7 @@ function makeService(
   connectorOverrides: Partial<Connector> = {},
   repoOverrides: Partial<AssetRepository> = {},
   genRepoOverrides: Partial<GenerationRepository> = {},
-  serviceOpts?: { retryBaseMs?: number },
+  serviceOpts?: { retryBaseMs?: number; concurrency?: number; logger?: { info: ReturnType<typeof vi.fn> } },
 ) {
   const connector = makeMockConnector(connectorOverrides);
   const repo = makeRepo(repoOverrides);
@@ -331,6 +331,22 @@ describe("generationService execution success path", () => {
     const createCall = vi.mocked(repo.create).mock.calls[0]![0];
     expect(path.normalize(createCall.filePath)).toContain(path.normalize(APP_DIR));
   });
+
+  it("emits structured success metrics", async () => {
+    const logger = { info: vi.fn() };
+    const { service } = makeService({}, {}, {}, { retryBaseMs: 0, logger });
+    await service.enqueue({ connectorId: "mock", prompt: "a cat", type: "image" });
+    await service.queue.waitForIdle();
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "generation.metrics",
+        metricEvent: "succeeded",
+        totals: expect.objectContaining({ submitted: 1, succeeded: 1 }),
+      }),
+      "generation metrics updated",
+    );
+  });
 });
 
 describe("generationService failure and retry behavior", () => {
@@ -373,6 +389,45 @@ describe("generationService failure and retry behavior", () => {
 
     expect(genRepo.markFailed).toHaveBeenCalledWith("job-1", "GENERATION_FAILED", "content policy", false);
     expect(genRepo.markRetrying).not.toHaveBeenCalled();
+  });
+
+  it("emits retry scheduling metric logs", async () => {
+    const logger = { info: vi.fn() };
+    const { service } = makeService({
+      generate: vi.fn().mockRejectedValue(new Error("transient")),
+    }, {}, {}, { retryBaseMs: 0, logger });
+
+    await service.enqueue({ connectorId: "mock", prompt: "x", type: "image" });
+    await service.queue.waitForIdle();
+
+    const metricPayloads = logger.info.mock.calls.map(([payload]) => payload);
+    expect(metricPayloads).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: "generation.metrics",
+        metricEvent: "retry_scheduled",
+        retryCount: expect.any(Number),
+      }),
+    ]));
+  });
+
+  it("emits failure metric logs", async () => {
+    const logger = { info: vi.fn() };
+    const nonRetryableErr = Object.assign(new Error("content policy"), { retryable: false });
+    const { service } = makeService({
+      generate: vi.fn().mockRejectedValue(nonRetryableErr),
+    }, {}, {}, { retryBaseMs: 0, logger });
+
+    await service.enqueue({ connectorId: "mock", prompt: "x", type: "image" });
+    await service.queue.waitForIdle();
+
+    const metricPayloads = logger.info.mock.calls.map(([payload]) => payload);
+    expect(metricPayloads).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: "generation.metrics",
+        metricEvent: "failed",
+        failureCodeCounts: expect.objectContaining({ GENERATION_FAILED: 1 }),
+      }),
+    ]));
   });
 });
 

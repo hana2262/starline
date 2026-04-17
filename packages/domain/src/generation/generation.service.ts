@@ -59,6 +59,20 @@ export class GenerationListError extends Error {
 type ConnectorRegistry = Map<string, Connector>;
 type ComputeHashFn = typeof computeFileHash;
 type GenerationSettings = { tags?: string[]; name?: string; settings?: Record<string, unknown> };
+type GenerationLogger = {
+  info(payload: Record<string, unknown>, message?: string): void;
+  warn?(payload: Record<string, unknown>, message?: string): void;
+};
+type GenerationMetricsState = {
+  submitted: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  retryCount: number;
+  failureCodeCounts: Record<string, number>;
+  durationSampleCount: number;
+  totalDurationMs: number;
+};
 
 const MIME_EXT: Record<string, string> = {
   "image/png": "png",
@@ -135,10 +149,59 @@ export function createGenerationService(
   genRepo: GenerationRepository,
   computeHash: ComputeHashFn,
   appDataDir: string,
-  opts?: { retryBaseMs?: number; maxRetryDelayMs?: number },
+  opts?: {
+    retryBaseMs?: number;
+    maxRetryDelayMs?: number;
+    concurrency?: number;
+    logger?: GenerationLogger;
+  },
 ) {
   const retryBaseMs = opts?.retryBaseMs ?? 1000;
   const maxRetryDelayMs = opts?.maxRetryDelayMs ?? 30_000;
+  const concurrency = opts?.concurrency ?? 1;
+  const logger = opts?.logger;
+  const metrics: GenerationMetricsState = {
+    submitted: 0,
+    succeeded: 0,
+    failed: 0,
+    cancelled: 0,
+    retryCount: 0,
+    failureCodeCounts: {},
+    durationSampleCount: 0,
+    totalDurationMs: 0,
+  };
+
+  function recordDuration(row: GenerationRow): number | null {
+    if (!row.startedAt) return null;
+    const durationMs = Math.max(0, Date.now() - new Date(row.startedAt).getTime());
+    metrics.durationSampleCount++;
+    metrics.totalDurationMs += durationMs;
+    return durationMs;
+  }
+
+  function logMetrics(event: string, row: GenerationRow, extra?: Record<string, unknown>): void {
+    logger?.info({
+      event: "generation.metrics",
+      metricEvent: event,
+      jobId: row.id,
+      status: row.status,
+      connectorId: row.connectorId,
+      attemptCount: row.attemptCount,
+      successRate: metrics.submitted > 0 ? Number((metrics.succeeded / metrics.submitted).toFixed(4)) : 0,
+      avgDurationMs: metrics.durationSampleCount > 0
+        ? Math.round(metrics.totalDurationMs / metrics.durationSampleCount)
+        : null,
+      retryCount: metrics.retryCount,
+      totals: {
+        submitted: metrics.submitted,
+        succeeded: metrics.succeeded,
+        failed: metrics.failed,
+        cancelled: metrics.cancelled,
+      },
+      failureCodeCounts: metrics.failureCodeCounts,
+      ...extra,
+    }, "generation metrics updated");
+  }
 
   function resolve(id: string): Connector {
     const connector = registry.get(id);
@@ -155,6 +218,11 @@ export function createGenerationService(
       row.cancelRequestedAt ?? cancelledAt,
       cancelledAt,
     );
+    const cancelledRow = genRepo.getById(row.id);
+    if (!cancelledRow) return;
+    metrics.cancelled++;
+    const durationMs = recordDuration(cancelledRow);
+    logMetrics("cancelled", cancelledRow, { durationMs });
   }
 
   function getCurrentJobOrCancel(jobId: string): GenerationRow | null {
@@ -182,11 +250,19 @@ export function createGenerationService(
       const delay = Math.min(Math.pow(2, row.attemptCount - 1) * retryBaseMs, maxRetryDelayMs);
       const nextRetryAt = new Date(Date.now() + delay).toISOString();
       genRepo.markRetrying(jobId, nextRetryAt);
+      metrics.retryCount++;
+      logMetrics("retry_scheduled", row, { errorCode: code, nextRetryAt });
       queue.scheduleRetry(jobId, delay);
       return;
     }
 
     genRepo.markFailed(jobId, code, (err as Error).message ?? String(err), retryable);
+    const failedRow = genRepo.getById(jobId);
+    if (!failedRow) return;
+    metrics.failed++;
+    metrics.failureCodeCounts[code] = (metrics.failureCodeCounts[code] ?? 0) + 1;
+    const durationMs = recordDuration(failedRow);
+    logMetrics("failed", failedRow, { durationMs, errorCode: code, retryable });
   }
 
   async function executeJob(jobId: string): Promise<void> {
@@ -201,6 +277,13 @@ export function createGenerationService(
     const connector = registry.get(row.connectorId);
     if (!connector) {
       genRepo.markFailed(jobId, "CONNECTOR_NOT_FOUND", `Unknown connector: ${row.connectorId}`, false);
+      const failedRow = genRepo.getById(jobId);
+      if (failedRow) {
+        metrics.failed++;
+        metrics.failureCodeCounts["CONNECTOR_NOT_FOUND"] = (metrics.failureCodeCounts["CONNECTOR_NOT_FOUND"] ?? 0) + 1;
+        const durationMs = recordDuration(failedRow);
+        logMetrics("failed", failedRow, { durationMs, errorCode: "CONNECTOR_NOT_FOUND", retryable: false });
+      }
       return;
     }
 
@@ -293,10 +376,16 @@ export function createGenerationService(
     }
 
     genRepo.markSucceeded(jobId, assetRow.id);
+    const succeededRow = genRepo.getById(jobId);
+    if (succeededRow) {
+      metrics.succeeded++;
+      const durationMs = recordDuration(succeededRow);
+      logMetrics("succeeded", succeededRow, { durationMs, assetId: assetRow.id });
+    }
     tryUnlink(output.filePath);
   }
 
-  const queue = new GenerationQueue(executeJob);
+  const queue = new GenerationQueue(executeJob, concurrency);
 
   return {
     async test(connectorId: string): Promise<ConnectorHealthResponse> {
@@ -325,7 +414,9 @@ export function createGenerationService(
         }),
       });
 
+      metrics.submitted++;
       queue.push(job.id);
+      logMetrics("submitted", job);
       return { job: toJobResponse(job) };
     },
 
@@ -361,7 +452,7 @@ export function createGenerationService(
 
       const requestedAt = new Date().toISOString();
       if (row.status === "queued") {
-        genRepo.markCancelled(jobId, USER_CANCEL_REASON, USER_CANCEL_MESSAGE, requestedAt, requestedAt);
+      genRepo.markCancelled(jobId, USER_CANCEL_REASON, USER_CANCEL_MESSAGE, requestedAt, requestedAt);
       } else if (row.status === "running") {
         genRepo.markCancelling(jobId, USER_CANCEL_REASON, USER_CANCEL_MESSAGE, requestedAt);
       } else {
@@ -371,6 +462,9 @@ export function createGenerationService(
       const updated = genRepo.getById(jobId);
       if (!updated) {
         throw new GenerationCancelError(`Generation job not found: ${jobId}`, "JOB_NOT_FOUND", jobId);
+      }
+      if (updated.status === "cancelling") {
+        logMetrics("cancelling", updated);
       }
       return { job: toJobResponse(updated) };
     },
@@ -388,12 +482,14 @@ export function createGenerationService(
       }
 
       genRepo.requeue(jobId);
+      metrics.retryCount++;
       const queued = genRepo.getById(jobId);
       if (!queued) {
         throw new GenerationRetryError(`Generation job not found: ${jobId}`, "JOB_NOT_FOUND", jobId);
       }
 
       queue.push(jobId);
+      logMetrics("retry_requeued", queued);
       return { job: toJobResponse(queued) };
     },
 
@@ -411,6 +507,13 @@ export function createGenerationService(
           "Generation job was running during the previous shutdown and requires manual retry.",
           true,
         );
+        const failedRow = genRepo.getById(row.id);
+        if (failedRow) {
+          metrics.failed++;
+          metrics.failureCodeCounts["WORKER_RECOVERY_FAILED"] = (metrics.failureCodeCounts["WORKER_RECOVERY_FAILED"] ?? 0) + 1;
+          const durationMs = recordDuration(failedRow);
+          logMetrics("failed", failedRow, { durationMs, errorCode: "WORKER_RECOVERY_FAILED", retryable: true });
+        }
       }
 
       const queuedJobs = genRepo.listQueuedReady();
