@@ -43,3 +43,21 @@ export const assets = sqliteTable(
 
 export type Asset = typeof assets.$inferSelect;
 export type NewAsset = typeof assets.$inferInsert;
+
+export const generations = sqliteTable("generations", {
+  id:           text("id").primaryKey(),
+  connectorId:  text("connector_id").notNull(),
+  prompt:       text("prompt").notNull(),
+  type:         text("type").notNull(),
+  projectId:    text("project_id"),
+  status:       text("status").notNull().default("queued"),
+  assetId:      text("asset_id"),
+  errorCode:    text("error_code"),
+  errorMessage: text("error_message"),
+  createdAt:    text("created_at").notNull(),
+  startedAt:    text("started_at"),
+  finishedAt:   text("finished_at"),
+});
+
+export type Generation    = typeof generations.$inferSelect;
+export type NewGeneration = typeof generations.$inferInsert;

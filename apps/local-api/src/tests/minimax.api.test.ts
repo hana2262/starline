@@ -68,25 +68,26 @@ describe("MiniMax connector (mocked HTTP, injected via extraConnectors)", () => 
     });
     expect(res.statusCode).toBe(201);
     const body = res.json<{
-      created: boolean;
+      job: { status: string; connectorId: string };
       asset: {
         id: string;
         filePath: string;
         sourceConnector: string | null;
         generationPrompt: string | null;
         generationMeta: string | null;
-      };
+      } | null;
     }>();
-    expect(body.created).toBe(true);
-    expect(body.asset.sourceConnector).toBe("minimax");
-    expect(body.asset.generationPrompt).toBe("a glowing neon cat");
+    expect(body.job.status).toBe("succeeded");
+    expect(body.asset).not.toBeNull();
+    expect(body.asset!.sourceConnector).toBe("minimax");
+    expect(body.asset!.generationPrompt).toBe("a glowing neon cat");
 
-    const meta = JSON.parse(body.asset.generationMeta!);
+    const meta = JSON.parse(body.asset!.generationMeta!);
     expect(meta.model).toBe("image-01");
     expect(typeof meta.seed).toBe("string");
     expect(typeof meta.latencyMs).toBe("number");
 
-    generatedFilePath = body.asset.filePath;
+    generatedFilePath = body.asset!.filePath;
   });
 
   it("#3 managed file exists on disk at asset.filePath (not OS temp)", async () => {

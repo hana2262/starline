@@ -20,8 +20,24 @@ export const GenerationSubmitSchema = z.object({
 });
 export type GenerationSubmitInput = z.infer<typeof GenerationSubmitSchema>;
 
-export const GenerationResultSchema = z.object({
-  created: z.boolean(),
-  asset:   AssetResponseSchema,
+export const GenerationJobSchema = z.object({
+  id:           z.string(),
+  connectorId:  z.string(),
+  prompt:       z.string(),
+  type:         AssetTypeSchema,
+  projectId:    z.string().nullable(),
+  status:       z.enum(["queued", "running", "succeeded", "failed"]),
+  assetId:      z.string().nullable(),
+  errorCode:    z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  createdAt:    z.string(),
+  startedAt:    z.string().nullable(),
+  finishedAt:   z.string().nullable(),
 });
-export type GenerationResult = z.infer<typeof GenerationResultSchema>;
+export type GenerationJob = z.infer<typeof GenerationJobSchema>;
+
+export const GenerationSubmitResultSchema = z.object({
+  job:   GenerationJobSchema,
+  asset: AssetResponseSchema.nullable(),
+});
+export type GenerationSubmitResult = z.infer<typeof GenerationSubmitResultSchema>;

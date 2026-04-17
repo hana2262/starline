@@ -3,10 +3,12 @@ import path from "path";
 import { randomUUID } from "crypto";
 import type { Connector, GenerateOutput } from "@starline/connectors";
 import type { AssetRepository } from "@starline/storage";
+import type { GenerationRepository, GenerationRow } from "@starline/storage";
 import type {
   ConnectorHealthResponse,
   GenerationSubmitInput,
-  GenerationResult,
+  GenerationSubmitResult,
+  GenerationJob,
   AssetResponse,
 } from "@starline/shared";
 import type { computeFileHash } from "../asset/file.utils.js";
@@ -15,7 +17,7 @@ import type { AssetRow } from "@starline/storage";
 export class ConnectorError extends Error {
   constructor(
     message: string,
-    public readonly code: "CONNECTOR_NOT_FOUND" | "HEALTH_CHECK_FAILED" | "GENERATION_FAILED",
+    public readonly code: "CONNECTOR_NOT_FOUND" | "HEALTH_CHECK_FAILED",
     public readonly connectorId: string,
   ) {
     super(message);
@@ -41,7 +43,24 @@ function extFor(mimeType: string): string {
   return MIME_EXT[mimeType] ?? "bin";
 }
 
-function toResponse(row: AssetRow): AssetResponse {
+function toJobResponse(row: GenerationRow): GenerationJob {
+  return {
+    id:           row.id,
+    connectorId:  row.connectorId,
+    prompt:       row.prompt,
+    type:         row.type as GenerationJob["type"],
+    projectId:    row.projectId ?? null,
+    status:       row.status as GenerationJob["status"],
+    assetId:      row.assetId ?? null,
+    errorCode:    row.errorCode ?? null,
+    errorMessage: row.errorMessage ?? null,
+    createdAt:    row.createdAt,
+    startedAt:    row.startedAt ?? null,
+    finishedAt:   row.finishedAt ?? null,
+  };
+}
+
+function toAssetResponse(row: AssetRow): AssetResponse {
   return {
     id:               row.id,
     projectId:        row.projectId ?? null,
@@ -65,6 +84,7 @@ function toResponse(row: AssetRow): AssetResponse {
 export function createGenerationService(
   registry:    ConnectorRegistry,
   assetRepo:   AssetRepository,
+  genRepo:     GenerationRepository,
   computeHash: ComputeHashFn,
   appDataDir:  string,
 ) {
@@ -89,10 +109,22 @@ export function createGenerationService(
       }
     },
 
-    async submit(input: GenerationSubmitInput): Promise<GenerationResult> {
+    async submit(input: GenerationSubmitInput): Promise<GenerationSubmitResult> {
+      // 0. Resolve connector — throws CONNECTOR_NOT_FOUND before any job is created
       const connector = resolve(input.connectorId);
 
-      // 1. Run generation — connector writes to OS temp
+      // 1. Create job row (status: queued)
+      const job = genRepo.create({
+        connectorId: input.connectorId,
+        prompt:      input.prompt,
+        type:        input.type,
+        projectId:   input.projectId ?? null,
+      });
+
+      // 2. Mark running
+      genRepo.markRunning(job.id);
+
+      // 3. Run generation — connector writes to OS temp
       let output: GenerateOutput;
       try {
         output = await connector.generate({
@@ -102,24 +134,34 @@ export function createGenerationService(
           settings:  input.settings,
         });
       } catch (err) {
-        throw new ConnectorError(
-          (err as Error).message,
-          "GENERATION_FAILED",
-          input.connectorId,
-        );
+        genRepo.markFailed(job.id, "GENERATION_FAILED", (err as Error).message);
+        return { job: toJobResponse(genRepo.getById(job.id)!), asset: null };
       }
 
-      // 2. Hash the temp file
-      const { hash, size, mimeType } = await computeHash(output.filePath);
+      // 4. Hash the temp file
+      let hash: string, size: number, mimeType: string;
+      try {
+        ({ hash, size, mimeType } = await computeHash(output.filePath));
+      } catch (err) {
+        try { unlinkSync(output.filePath); } catch { /* ignore */ }
+        genRepo.markFailed(job.id, "HASH_FAILED", (err as Error).message);
+        return { job: toJobResponse(genRepo.getById(job.id)!), asset: null };
+      }
 
-      // 3. Move temp → managed path (appDataDir/<assetId>.<ext>)
+      // 5. Copy temp → managed path (appDataDir/<assetId>.<ext>)
       const assetId     = randomUUID();
       const ext         = extFor(output.mimeType ?? mimeType);
       const managedPath = path.join(appDataDir, `${assetId}.${ext}`);
       mkdirSync(appDataDir, { recursive: true });
-      copyFileSync(output.filePath, managedPath);
+      try {
+        copyFileSync(output.filePath, managedPath);
+      } catch (err) {
+        try { unlinkSync(output.filePath); } catch { /* ignore */ }
+        genRepo.markFailed(job.id, "PERSIST_FAILED", (err as Error).message);
+        return { job: toJobResponse(genRepo.getById(job.id)!), asset: null };
+      }
 
-      // 4. Persist — NO content-hash dedup: every run creates a new record
+      // 6. Persist asset — NO content-hash dedup
       let row: AssetRow;
       try {
         row = assetRepo.create({
@@ -138,16 +180,26 @@ export function createGenerationService(
           generationMeta:   JSON.stringify(output.meta),
         });
       } catch (err) {
-        // Persistence failed — clean up managed file best-effort
-        try { unlinkSync(managedPath); } catch { /* ignore */ }
+        try { unlinkSync(managedPath); }     catch { /* ignore */ }
         try { unlinkSync(output.filePath); } catch { /* ignore */ }
-        throw err;
+        genRepo.markFailed(job.id, "PERSIST_FAILED", (err as Error).message);
+        return { job: toJobResponse(genRepo.getById(job.id)!), asset: null };
       }
 
-      // 5. Clean up temp file best-effort
+      // 7. Mark succeeded
+      genRepo.markSucceeded(job.id, row.id);
+
+      // 8. Clean up temp file best-effort
       try { unlinkSync(output.filePath); } catch { /* ignore */ }
 
-      return { created: true, asset: toResponse(row) };
+      // 9. Re-fetch job so finishedAt + assetId are populated
+      const succeededJob = genRepo.getById(job.id)!;
+      return { job: toJobResponse(succeededJob), asset: toAssetResponse(row) };
+    },
+
+    getJob(jobId: string): GenerationJob | null {
+      const row = genRepo.getById(jobId);
+      return row ? toJobResponse(row) : null;
     },
   };
 }

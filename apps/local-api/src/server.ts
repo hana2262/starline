@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import path from "path";
-import { getDb, getSqlite, createProjectRepository, createAssetRepository } from "@starline/storage";
+import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository } from "@starline/storage";
 import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError } from "@starline/domain";
 import { MockConnector, MinimaxConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
@@ -23,8 +23,9 @@ export function buildServer(
   const projectRepo = createProjectRepository(db);
   const projectService = createProjectService(projectRepo);
 
-  const assetRepo = createAssetRepository(db, sqlite);
-  const assetService = createAssetService(assetRepo, computeFileHash);
+  const assetRepo      = createAssetRepository(db, sqlite);
+  const assetService   = createAssetService(assetRepo, computeFileHash);
+  const generationRepo = createGenerationRepository(db);
 
   const appDataDir        = path.join(path.dirname(dbPath), "assets");
   const connectorRegistry = new Map<string, Connector>([
@@ -39,7 +40,7 @@ export function buildServer(
   options?.extraConnectors?.forEach((c, id) => connectorRegistry.set(id, c));
 
   const generationService = createGenerationService(
-    connectorRegistry, assetRepo, computeFileHash, appDataDir,
+    connectorRegistry, assetRepo, generationRepo, computeFileHash, appDataDir,
   );
 
   // Health check
