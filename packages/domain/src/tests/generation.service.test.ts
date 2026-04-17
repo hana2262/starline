@@ -141,7 +141,8 @@ function makeGenRepo(overrides: Partial<GenerationRepository> = {}): GenerationR
         retryable:    null,
       };
     }),
-    getNextQueued: vi.fn().mockReturnValue(undefined),
+    listQueuedReady: vi.fn().mockReturnValue([]),
+    listRunning: vi.fn().mockReturnValue([]),
     ...overrides,
   };
 }
@@ -441,5 +442,39 @@ describe("generationService.retry", () => {
     });
 
     expect(() => service.retry("job-1")).toThrowError(/not retryable/i);
+  });
+});
+
+describe("generationService.recoverPendingJobs", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("re-enqueues queued jobs eligible to run on startup", async () => {
+    const queuedRow = makeGenerationRow({ id: "job-recover-1", status: "queued" });
+    const { service, genRepo } = makeService({}, {}, {
+      listQueuedReady: vi.fn().mockReturnValue([queuedRow]),
+      getById: vi.fn().mockReturnValue(queuedRow),
+    });
+
+    service.recoverPendingJobs();
+    await service.queue.waitForIdle();
+
+    expect(genRepo.listQueuedReady).toHaveBeenCalledOnce();
+    expect(genRepo.markSucceeded).toHaveBeenCalledWith("job-recover-1", expect.any(String));
+  });
+
+  it("marks stale running jobs failed and manually retryable", () => {
+    const runningRow = makeGenerationRow({ id: "job-running-1", status: "running", attemptCount: 1 });
+    const { service, genRepo } = makeService({}, {}, {
+      listRunning: vi.fn().mockReturnValue([runningRow]),
+    });
+
+    service.recoverPendingJobs();
+
+    expect(genRepo.markFailed).toHaveBeenCalledWith(
+      "job-running-1",
+      "WORKER_RECOVERY_FAILED",
+      expect.stringContaining("manual retry"),
+      true,
+    );
   });
 });

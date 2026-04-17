@@ -98,9 +98,7 @@ export function createGenerationRepository(db: Db) {
         .run();
     },
 
-    /** Returns the next queued job eligible to run (nextRetryAt is null or in the past).
-     *  Provided for future startup recovery; not called by the MVP in-process worker. */
-    getNextQueued(nowIso?: string): GenerationRow | undefined {
+    listQueuedReady(nowIso?: string): GenerationRow[] {
       const cutoff = nowIso ?? now();
       return db
         .select()
@@ -112,8 +110,16 @@ export function createGenerationRepository(db: Db) {
           ),
         )
         .orderBy(asc(generations.createdAt))
-        .limit(1)
-        .get();
+        .all();
+    },
+
+    listRunning(): GenerationRow[] {
+      return db
+        .select()
+        .from(generations)
+        .where(eq(generations.status, "running"))
+        .orderBy(asc(generations.createdAt))
+        .all();
     },
   };
 }

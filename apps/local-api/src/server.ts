@@ -44,6 +44,8 @@ export function buildServer(
     { retryBaseMs: options?.retryBaseMs },
   );
 
+  generationService.recoverPendingJobs();
+
   // Cancel pending retry timers on server shutdown
   app.addHook("onClose", async () => {
     generationService.queue.destroy();

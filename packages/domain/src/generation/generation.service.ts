@@ -275,6 +275,23 @@ export function createGenerationService(
       return { job: toJobResponse(queued) };
     },
 
+    recoverPendingJobs(): void {
+      const runningJobs = genRepo.listRunning();
+      for (const row of runningJobs) {
+        genRepo.markFailed(
+          row.id,
+          "WORKER_RECOVERY_FAILED",
+          "Generation job was running during the previous shutdown and requires manual retry.",
+          true,
+        );
+      }
+
+      const queuedJobs = genRepo.listQueuedReady();
+      for (const row of queuedJobs) {
+        queue.push(row.id);
+      }
+    },
+
     /** Exposed for server lifecycle management and test synchronisation. */
     queue,
   };
