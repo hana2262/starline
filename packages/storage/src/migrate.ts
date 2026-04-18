@@ -3,8 +3,33 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { getDb, getSqlite } from "./db.js";
 
-const moduleFilename =
-  typeof __filename === "string" ? __filename : fileURLToPath(import.meta.url);
+function resolveModuleFilename(): string {
+  if (typeof __filename === "string") {
+    return __filename;
+  }
+
+  const stack = new Error().stack;
+  if (!stack) {
+    throw new Error("Unable to resolve migration module filename from stack");
+  }
+
+  const frames = stack.split("\n").slice(1);
+  for (const frame of frames) {
+    const fileUrlMatch = frame.match(/(file:\/\/\/[^\s)]+):\d+:\d+/);
+    if (fileUrlMatch) {
+      return fileURLToPath(fileUrlMatch[1]);
+    }
+
+    const windowsPathMatch = frame.match(/([A-Za-z]:\\[^():]+):\d+:\d+/);
+    if (windowsPathMatch) {
+      return windowsPathMatch[1];
+    }
+  }
+
+  throw new Error("Unable to resolve migration module filename from stack");
+}
+
+const moduleFilename = resolveModuleFilename();
 const moduleDirname = path.dirname(moduleFilename);
 
 export function runMigrations(dbPath: string) {

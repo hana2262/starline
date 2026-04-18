@@ -23,7 +23,6 @@ const storageMigrationsDir = path.join(workspaceDir, "packages", "storage", "mig
 const runtimeDir = path.join(resourcesDir, "runtime");
 const packagedApiDir = path.join(resourcesDir, "local-api");
 const packagedNodeModulesDir = path.join(packagedApiDir, "node_modules");
-const esbuildCommand = path.join(workspaceDir, "node_modules", ".pnpm", "node_modules", ".bin", "esbuild.CMD");
 const packagedApiEntry = path.join(packagedApiDir, "index.cjs");
 
 function resolvePackageDir(packageName) {
@@ -87,6 +86,40 @@ function copyPackageTree(packageName, visited = new Set()) {
   }
 }
 
+function resolveEsbuildExecutable() {
+  const executableCandidates = [
+    path.join(workspaceDir, "node_modules", "@esbuild", "win32-x64", "esbuild.exe"),
+  ];
+
+  for (const candidate of executableCandidates) {
+    if (existsSync(candidate)) {
+      return realpathSync(candidate);
+    }
+  }
+
+  const pnpmDir = path.join(workspaceDir, "node_modules", ".pnpm");
+  for (const entry of readdirSync(pnpmDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.startsWith("@esbuild+win32-x64@")) {
+      continue;
+    }
+
+    const executablePath = path.join(
+      pnpmDir,
+      entry.name,
+      "node_modules",
+      "@esbuild",
+      "win32-x64",
+      "esbuild.exe",
+    );
+
+    if (existsSync(executablePath)) {
+      return realpathSync(executablePath);
+    }
+  }
+
+  throw new Error("Unable to locate esbuild.exe for packaged runtime preparation");
+}
+
 const nodeExecutable = process.execPath;
 if (!nodeExecutable.toLowerCase().endsWith("node.exe")) {
   throw new Error(`Expected a Windows node.exe runtime, received ${nodeExecutable}`);
@@ -96,6 +129,7 @@ const localApiEntry = path.join(localApiDir, "dist", "index.js");
 if (!existsSync(localApiEntry)) {
   throw new Error(`Missing local-api build output at ${localApiEntry}`);
 }
+const esbuildExecutable = resolveEsbuildExecutable();
 
 rmSync(resourcesDir, { recursive: true, force: true });
 mkdirSync(runtimeDir, { recursive: true });
@@ -107,7 +141,7 @@ cpSync(storageMigrationsDir, path.join(resourcesDir, "migrations"), {
 });
 
 const bundleResult = spawnSync(
-  esbuildCommand,
+  esbuildExecutable,
   [
     localApiEntry,
     "--bundle",
@@ -119,7 +153,6 @@ const bundleResult = spawnSync(
   ],
   {
     cwd: workspaceDir,
-    shell: true,
     stdio: "inherit",
   },
 );
