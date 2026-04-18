@@ -1,14 +1,16 @@
 import Fastify from "fastify";
 import type { FastifyBaseLogger } from "fastify";
 import path from "path";
-import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository } from "@starline/storage";
-import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError } from "@starline/domain";
-import { MockConnector, MinimaxConnector, StableDiffusionConnector } from "@starline/connectors";
+import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository, createConnectorConfigRepository, createConnectorSecretRepository } from "@starline/storage";
+import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError } from "@starline/domain";
+import { MockConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
 import { runMigrations } from "@starline/storage/src/migrate.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerGenerationRoutes } from "./routes/generation.js";
+import { registerConnectorRoutes } from "./routes/connectors.js";
+import { buildConfiguredConnectors } from "./connectors.runtime.js";
 
 function resolveGenerationConcurrency(
   envValue: string | undefined,
@@ -48,21 +50,30 @@ export function buildServer(
   const assetRepo      = createAssetRepository(db, sqlite);
   const assetService   = createAssetService(assetRepo, computeFileHash);
   const generationRepo = createGenerationRepository(db);
+  const connectorConfigRepo = createConnectorConfigRepository(db);
+  const connectorSecretRepo = createConnectorSecretRepository(db);
+  const connectorConfigService = createConnectorConfigService(
+    connectorConfigRepo,
+    connectorSecretRepo,
+    {
+      minimaxApiKey: process.env["MINIMAX_API_KEY"],
+      stableDiffusionBaseUrl: process.env["STABLE_DIFFUSION_BASE_URL"],
+    },
+  );
 
   const appDataDir        = path.join(path.dirname(dbPath), "assets");
   const connectorRegistry = new Map<string, Connector>([
     ["mock", new MockConnector()],
   ]);
-
-  const minimaxKey = process.env["MINIMAX_API_KEY"];
-  if (minimaxKey) {
-    connectorRegistry.set("minimax", new MinimaxConnector(minimaxKey));
-  }
-
-  const stableDiffusionBaseUrl = process.env["STABLE_DIFFUSION_BASE_URL"];
-  if (stableDiffusionBaseUrl) {
-    connectorRegistry.set("stable-diffusion", new StableDiffusionConnector(stableDiffusionBaseUrl));
-  }
+  buildConfiguredConnectors(
+    connectorConfigRepo,
+    connectorSecretRepo,
+    {
+      minimaxApiKey: process.env["MINIMAX_API_KEY"],
+      stableDiffusionBaseUrl: process.env["STABLE_DIFFUSION_BASE_URL"],
+    },
+    app.log,
+  ).forEach((connector, id) => connectorRegistry.set(id, connector));
 
   options?.extraConnectors?.forEach((c, id) => connectorRegistry.set(id, c));
   const generationConcurrency = resolveGenerationConcurrency(
@@ -93,6 +104,7 @@ export function buildServer(
   // Feature routes
   registerProjectRoutes(app, projectService);
   registerAssetRoutes(app, assetService);
+  registerConnectorRoutes(app, connectorConfigService);
   registerGenerationRoutes(app, generationService);
 
   // Error handler: ConnectorError → 404/502; AssetImportError → 409/422; ZodError → 400; else → 500
@@ -102,6 +114,13 @@ export function buildServer(
       return reply.code(status).send({
         error:       err.message,
         code:        err.code,
+        connectorId: err.connectorId,
+      });
+    }
+    if (err instanceof ConnectorConfigError) {
+      return reply.code(400).send({
+        error: err.message,
+        code: err.code,
         connectorId: err.connectorId,
       });
     }

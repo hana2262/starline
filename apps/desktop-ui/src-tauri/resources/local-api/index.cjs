@@ -7642,7 +7642,7 @@ var require_logger = __commonJS({
         };
       }
     };
-    function now4() {
+    function now6() {
       const ts = process.hrtime();
       return ts[0] * 1e3 + ts[1] / 1e6;
     }
@@ -7705,7 +7705,7 @@ var require_logger = __commonJS({
       createChildLogger,
       defaultChildLoggerFactory,
       serializers,
-      now: now4
+      now: now6
     };
   }
 });
@@ -8492,7 +8492,7 @@ var require_reply = __commonJS({
     } = require_hooks();
     var internals = require_handleRequest()[Symbol.for("internals")];
     var loggerUtils = require_logger();
-    var now4 = loggerUtils.now;
+    var now6 = loggerUtils.now;
     var { handleError } = require_error_handler();
     var { getSchemaSerializer } = require_schemas();
     var CONTENT_TYPE = {
@@ -8547,7 +8547,7 @@ var require_reply = __commonJS({
           if (this[kReplyStartTime] === void 0) {
             return 0;
           }
-          return (this[kReplyEndTime] || now4()) - this[kReplyStartTime];
+          return (this[kReplyEndTime] || now6()) - this[kReplyStartTime];
         }
       },
       server: {
@@ -9124,9 +9124,9 @@ var require_reply = __commonJS({
       }
     }
     function setupResponseListeners(reply) {
-      reply[kReplyStartTime] = now4();
+      reply[kReplyStartTime] = now6();
       const onResFinished = (err) => {
-        reply[kReplyEndTime] = now4();
+        reply[kReplyEndTime] = now6();
         reply.raw.removeListener("finish", onResFinished);
         reply.raw.removeListener("error", onResFinished);
         const ctx = reply[kRouteContext];
@@ -38603,6 +38603,8 @@ function drizzle(client, config = {}) {
 var schema_exports = {};
 __export(schema_exports, {
   assets: () => assets,
+  connectorConfigs: () => connectorConfigs,
+  connectorSecrets: () => connectorSecrets,
   generations: () => generations,
   projects: () => projects
 });
@@ -38662,6 +38664,19 @@ var generations = sqliteTable("generations", {
   nextRetryAt: text("next_retry_at"),
   retryable: integer("retryable"),
   settings: text("settings")
+});
+var connectorConfigs = sqliteTable("connector_configs", {
+  connectorId: text("connector_id").primaryKey(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  config: text("config").notNull().default("{}"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+var connectorSecrets = sqliteTable("connector_secrets", {
+  connectorId: text("connector_id").primaryKey(),
+  secret: text("secret").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
 });
 
 // packages/storage/src/db.ts
@@ -38998,6 +39013,73 @@ function createGenerationRepository(db) {
         items,
         nextCursor: rows.length > input.limit && last ? { createdAt: last.createdAt, id: last.id } : null
       };
+    }
+  };
+}
+
+// packages/storage/src/connector.repository.ts
+function now4() {
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+function createConnectorConfigRepository(db) {
+  return {
+    list() {
+      return db.select().from(connectorConfigs).all();
+    },
+    getById(connectorId) {
+      return db.select().from(connectorConfigs).where(eq(connectorConfigs.connectorId, connectorId)).get();
+    },
+    upsert(input) {
+      const existing = this.getById(input.connectorId);
+      const timestamp = now4();
+      if (!existing) {
+        const row = {
+          connectorId: input.connectorId,
+          enabled: input.enabled,
+          config: input.config,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        };
+        db.insert(connectorConfigs).values(row).run();
+        return row;
+      }
+      db.update(connectorConfigs).set({
+        enabled: input.enabled,
+        config: input.config,
+        updatedAt: timestamp
+      }).where(eq(connectorConfigs.connectorId, input.connectorId)).run();
+      return this.getById(input.connectorId);
+    }
+  };
+}
+
+// packages/storage/src/connector-secret.repository.ts
+function now5() {
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+function createConnectorSecretRepository(db) {
+  return {
+    getById(connectorId) {
+      return db.select().from(connectorSecrets).where(eq(connectorSecrets.connectorId, connectorId)).get();
+    },
+    upsert(input) {
+      const existing = this.getById(input.connectorId);
+      const timestamp = now5();
+      if (!existing) {
+        const row = {
+          connectorId: input.connectorId,
+          secret: input.secret,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        };
+        db.insert(connectorSecrets).values(row).run();
+        return row;
+      }
+      db.update(connectorSecrets).set({
+        secret: input.secret,
+        updatedAt: timestamp
+      }).where(eq(connectorSecrets.connectorId, input.connectorId)).run();
+      return this.getById(input.connectorId);
     }
   };
 }
@@ -39681,321 +39763,6 @@ function createGenerationService(registry, assetRepo, genRepo, computeHash, appD
     },
     queue
   };
-}
-
-// packages/connectors/src/mock.connector.ts
-var import_fs4 = __toESM(require("fs"), 1);
-var import_path4 = __toESM(require("path"), 1);
-var import_os = __toESM(require("os"), 1);
-var import_crypto6 = require("crypto");
-var MockConnector = class {
-  id = "mock";
-  name = "Mock Connector";
-  async healthCheck() {
-    const t = Date.now();
-    await Promise.resolve();
-    return { ok: true, latencyMs: Date.now() - t };
-  }
-  async generate(input) {
-    const t = Date.now();
-    const seed = (0, import_crypto6.randomUUID)();
-    const filePath = import_path4.default.join(import_os.default.tmpdir(), `starline-mock-${seed}.txt`);
-    const content = `mock:${input.prompt}|seed:${seed}|type:${input.type}`;
-    import_fs4.default.writeFileSync(filePath, content, "utf8");
-    return {
-      filePath,
-      mimeType: "text/plain",
-      name: input.prompt.slice(0, 80).trim() || "mock-output",
-      meta: { model: "mock-v1", seed, latencyMs: Date.now() - t }
-    };
-  }
-};
-
-// packages/connectors/src/minimax.connector.ts
-var import_fs5 = require("fs");
-var import_path5 = __toESM(require("path"), 1);
-var import_os2 = __toESM(require("os"), 1);
-var import_crypto7 = require("crypto");
-var API_BASE = "https://api.minimax.io/v1";
-var MODELS_URL = `${API_BASE}/models`;
-var GENERATE_URL = `${API_BASE}/image_generation`;
-var MIME_EXT2 = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp"
-};
-function extFor2(mime) {
-  return MIME_EXT2[mime] ?? "bin";
-}
-var MinimaxConnector = class {
-  constructor(apiKey, fetchFn = globalThis.fetch) {
-    this.apiKey = apiKey;
-    this.fetchFn = fetchFn;
-  }
-  id = "minimax";
-  name = "MiniMax Image";
-  async healthCheck() {
-    const start = Date.now();
-    const latencyMs = () => Date.now() - start;
-    try {
-      const res = await this.fetchFn(MODELS_URL, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${this.apiKey}` }
-      });
-      if (res.status === 200) {
-        return { ok: true, latencyMs: latencyMs() };
-      }
-      if (res.status === 401 || res.status === 403) {
-        return { ok: false, latencyMs: latencyMs(), error: "Authentication failed \u2014 check MINIMAX_API_KEY" };
-      }
-      if (res.status === 404 || res.status === 405) {
-        return this.apiKey ? { ok: true, latencyMs: latencyMs() } : { ok: false, latencyMs: latencyMs(), error: "No API key configured" };
-      }
-      return { ok: true, latencyMs: latencyMs() };
-    } catch (err) {
-      return { ok: false, latencyMs: latencyMs(), error: err.message };
-    }
-  }
-  async generate(input) {
-    const start = Date.now();
-    const seed = (0, import_crypto7.randomUUID)();
-    const genRes = await this.fetchFn(GENERATE_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "image-01",
-        prompt: input.prompt,
-        n: 1,
-        response_format: "url",
-        aspect_ratio: input.settings?.["aspect_ratio"] ?? "1:1",
-        seed
-      })
-    });
-    const json = await genRes.json();
-    if (json.base_resp.status_code !== 0) {
-      throw new Error(
-        `MiniMax API error: ${json.base_resp.status_msg} (code ${json.base_resp.status_code})`
-      );
-    }
-    const imageUrl = json.data.image_urls[0];
-    if (!imageUrl) {
-      throw new Error("MiniMax returned no image URLs");
-    }
-    const imgRes = await this.fetchFn(imageUrl);
-    const rawMime = imgRes.headers.get("content-type") ?? "image/png";
-    const mimeType = rawMime.split(";")[0]?.trim() ?? "image/png";
-    if (!mimeType.startsWith("image/")) {
-      throw new Error(`Unexpected content-type from image URL: ${mimeType}`);
-    }
-    const buffer = Buffer.from(await imgRes.arrayBuffer());
-    const ext = extFor2(mimeType);
-    const filePath = import_path5.default.join(import_os2.default.tmpdir(), `minimax-${(0, import_crypto7.randomUUID)()}.${ext}`);
-    (0, import_fs5.writeFileSync)(filePath, buffer);
-    return {
-      filePath,
-      mimeType,
-      name: input.prompt.slice(0, 80).trim() || "minimax-output",
-      meta: { model: "image-01", seed, latencyMs: Date.now() - start }
-    };
-  }
-};
-
-// packages/connectors/src/stable-diffusion.connector.ts
-var import_fs6 = require("fs");
-var import_os3 = __toESM(require("os"), 1);
-var import_path6 = __toESM(require("path"), 1);
-var import_crypto8 = require("crypto");
-function normalizeBaseUrl(baseUrl) {
-  return baseUrl.replace(/\/+$/, "");
-}
-function parseInfo(info) {
-  if (!info)
-    return {};
-  try {
-    const parsed = JSON.parse(info);
-    return {
-      seed: parsed["seed"] !== void 0 ? String(parsed["seed"]) : void 0,
-      model: typeof parsed["sd_model_name"] === "string" ? parsed["sd_model_name"] : typeof parsed["model"] === "string" ? parsed["model"] : void 0
-    };
-  } catch {
-    return {};
-  }
-}
-var StableDiffusionConnector = class {
-  constructor(baseUrl, fetchFn = globalThis.fetch) {
-    this.fetchFn = fetchFn;
-    this.baseUrl = normalizeBaseUrl(baseUrl);
-  }
-  id = "stable-diffusion";
-  name = "Stable Diffusion WebUI";
-  baseUrl;
-  async healthCheck() {
-    const start = Date.now();
-    const latencyMs = () => Date.now() - start;
-    try {
-      const response = await this.fetchFn(`${this.baseUrl}/sdapi/v1/options`, {
-        method: "GET"
-      });
-      if (response.status === 200) {
-        return { ok: true, latencyMs: latencyMs() };
-      }
-      return {
-        ok: false,
-        latencyMs: latencyMs(),
-        error: `Stable Diffusion health check failed with status ${response.status}`
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        latencyMs: latencyMs(),
-        error: error.message
-      };
-    }
-  }
-  async generate(input) {
-    if (input.type !== "image") {
-      throw Object.assign(
-        new Error("Stable Diffusion connector only supports image generation"),
-        { retryable: false }
-      );
-    }
-    const start = Date.now();
-    const response = await this.fetchFn(`${this.baseUrl}/sdapi/v1/txt2img`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        prompt: input.prompt,
-        steps: typeof input.settings?.["steps"] === "number" ? input.settings["steps"] : 20,
-        width: typeof input.settings?.["width"] === "number" ? input.settings["width"] : 1024,
-        height: typeof input.settings?.["height"] === "number" ? input.settings["height"] : 1024,
-        sampler_name: typeof input.settings?.["sampler_name"] === "string" ? input.settings["sampler_name"] : "Euler a"
-      })
-    });
-    if (!response.ok) {
-      throw new Error(`Stable Diffusion generation failed with status ${response.status}`);
-    }
-    const json = await response.json();
-    const base64Image = json.images?.[0];
-    if (!base64Image) {
-      throw new Error("Stable Diffusion returned no images");
-    }
-    const buffer = Buffer.from(base64Image, "base64");
-    const filePath = import_path6.default.join(import_os3.default.tmpdir(), `stable-diffusion-${(0, import_crypto8.randomUUID)()}.png`);
-    (0, import_fs6.writeFileSync)(filePath, buffer);
-    const info = parseInfo(json.info);
-    return {
-      filePath,
-      mimeType: "image/png",
-      name: input.prompt.slice(0, 80).trim() || "stable-diffusion-output",
-      meta: {
-        model: info.model ?? "automatic1111-webui",
-        seed: info.seed ?? (0, import_crypto8.randomUUID)(),
-        latencyMs: Date.now() - start
-      }
-    };
-  }
-};
-
-// node_modules/.pnpm/drizzle-orm@0.31.4_@types+b_d6200a5e5bcea09e37cc0206e17bf88f/node_modules/drizzle-orm/migrator.js
-var import_node_crypto = __toESM(require("node:crypto"), 1);
-var import_node_fs = __toESM(require("node:fs"), 1);
-var import_node_path = __toESM(require("node:path"), 1);
-function readMigrationFiles(config) {
-  let migrationFolderTo;
-  if (typeof config === "string") {
-    const configAsString = import_node_fs.default.readFileSync(import_node_path.default.resolve(".", config), "utf8");
-    const jsonConfig = JSON.parse(configAsString);
-    migrationFolderTo = jsonConfig.out;
-  } else {
-    migrationFolderTo = config.migrationsFolder;
-  }
-  if (!migrationFolderTo) {
-    throw new Error("no migration folder defined");
-  }
-  const migrationQueries = [];
-  const journalPath = `${migrationFolderTo}/meta/_journal.json`;
-  if (!import_node_fs.default.existsSync(journalPath)) {
-    throw new Error(`Can't find meta/_journal.json file`);
-  }
-  const journalAsString = import_node_fs.default.readFileSync(`${migrationFolderTo}/meta/_journal.json`).toString();
-  const journal = JSON.parse(journalAsString);
-  for (const journalEntry of journal.entries) {
-    const migrationPath = `${migrationFolderTo}/${journalEntry.tag}.sql`;
-    try {
-      const query = import_node_fs.default.readFileSync(`${migrationFolderTo}/${journalEntry.tag}.sql`).toString();
-      const result = query.split("--> statement-breakpoint").map((it) => {
-        return it;
-      });
-      migrationQueries.push({
-        sql: result,
-        bps: journalEntry.breakpoints,
-        folderMillis: journalEntry.when,
-        hash: import_node_crypto.default.createHash("sha256").update(query).digest("hex")
-      });
-    } catch {
-      throw new Error(`No file ${migrationPath} found in ${migrationFolderTo} folder`);
-    }
-  }
-  return migrationQueries;
-}
-
-// node_modules/.pnpm/drizzle-orm@0.31.4_@types+b_d6200a5e5bcea09e37cc0206e17bf88f/node_modules/drizzle-orm/better-sqlite3/migrator.js
-function migrate(db, config) {
-  const migrations = readMigrationFiles(config);
-  db.dialect.migrate(migrations, db.session, config);
-}
-
-// packages/storage/src/migrate.ts
-var import_path7 = __toESM(require("path"), 1);
-var import_url = require("url");
-function resolveModuleFilename() {
-  if (typeof __filename === "string") {
-    return __filename;
-  }
-  const stack = new Error().stack;
-  if (!stack) {
-    throw new Error("Unable to resolve migration module filename from stack");
-  }
-  const frames = stack.split("\n").slice(1);
-  for (const frame of frames) {
-    const fileUrlMatch = frame.match(/(file:\/\/\/[^\s)]+):\d+:\d+/);
-    if (fileUrlMatch) {
-      return (0, import_url.fileURLToPath)(fileUrlMatch[1]);
-    }
-    const windowsPathMatch = frame.match(/([A-Za-z]:\\[^():]+):\d+:\d+/);
-    if (windowsPathMatch) {
-      return windowsPathMatch[1];
-    }
-  }
-  throw new Error("Unable to resolve migration module filename from stack");
-}
-var moduleFilename = resolveModuleFilename();
-var moduleDirname = import_path7.default.dirname(moduleFilename);
-function runMigrations(dbPath) {
-  const db = getDb(dbPath);
-  const migrationsFolder = import_path7.default.join(moduleDirname, "..", "migrations");
-  migrate(db, { migrationsFolder });
-  const sqlite = getSqlite();
-  sqlite.prepare(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS assets_fts
-    USING fts5(id UNINDEXED, name, tags, description)
-  `).run();
-  sqlite.prepare(`
-    INSERT INTO assets_fts(id, name, tags, description)
-    SELECT a.id, a.name, a.tags, COALESCE(a.description, '')
-    FROM assets a
-    WHERE a.id NOT IN (SELECT id FROM assets_fts)
-  `).run();
-}
-if (process.argv[1] === moduleFilename) {
-  const dbPath = process.env["DB_PATH"] ?? "./starline-dev.db";
-  runMigrations(dbPath);
-  console.log("Migrations applied to", dbPath);
 }
 
 // node_modules/.pnpm/zod@3.25.76/node_modules/zod/v3/external.js
@@ -44173,6 +43940,480 @@ var GenerationMetricsResultSchema = external_exports.object({
   startedAt: external_exports.string()
 });
 
+// packages/shared/src/connector-config.schema.ts
+var ConnectorIdSchema = external_exports.enum(["minimax", "stable-diffusion"]);
+var MinimaxConnectorConfigSchema = external_exports.object({
+  apiKey: external_exports.string().min(1).optional()
+});
+var StableDiffusionConnectorConfigSchema = external_exports.object({
+  baseUrl: external_exports.string().url()
+});
+var ConnectorConfigUpsertSchema = external_exports.discriminatedUnion("connectorId", [
+  external_exports.object({
+    connectorId: external_exports.literal("minimax"),
+    enabled: external_exports.boolean(),
+    config: MinimaxConnectorConfigSchema
+  }),
+  external_exports.object({
+    connectorId: external_exports.literal("stable-diffusion"),
+    enabled: external_exports.boolean(),
+    config: StableDiffusionConnectorConfigSchema
+  })
+]);
+var ConnectorConfigViewSchema = external_exports.discriminatedUnion("connectorId", [
+  external_exports.object({
+    connectorId: external_exports.literal("minimax"),
+    enabled: external_exports.boolean(),
+    source: external_exports.enum(["db", "env"]),
+    config: external_exports.object({}),
+    hasSensitiveConfig: external_exports.boolean(),
+    hasStoredSecret: external_exports.boolean(),
+    createdAt: external_exports.string(),
+    updatedAt: external_exports.string()
+  }),
+  external_exports.object({
+    connectorId: external_exports.literal("stable-diffusion"),
+    enabled: external_exports.boolean(),
+    source: external_exports.enum(["db", "env"]),
+    config: StableDiffusionConnectorConfigSchema,
+    hasSensitiveConfig: external_exports.boolean(),
+    hasStoredSecret: external_exports.boolean(),
+    createdAt: external_exports.string(),
+    updatedAt: external_exports.string()
+  })
+]);
+var ConnectorConfigListResultSchema = external_exports.object({
+  items: external_exports.array(ConnectorConfigViewSchema)
+});
+var ConnectorConfigUpsertResultSchema = external_exports.object({
+  item: ConnectorConfigViewSchema
+});
+
+// packages/domain/src/connector/connector-config.service.ts
+var ConnectorConfigError = class extends Error {
+  constructor(message, code, connectorId) {
+    super(message);
+    this.code = code;
+    this.connectorId = connectorId;
+    this.name = "ConnectorConfigError";
+  }
+};
+function buildMinimaxView(enabled, source, hasStoredSecret, createdAt, updatedAt) {
+  return {
+    connectorId: "minimax",
+    enabled,
+    source,
+    config: {},
+    hasSensitiveConfig: true,
+    hasStoredSecret,
+    createdAt,
+    updatedAt
+  };
+}
+function buildStableDiffusionView(enabled, source, config, hasStoredSecret, createdAt, updatedAt) {
+  return {
+    connectorId: "stable-diffusion",
+    enabled,
+    source,
+    config,
+    hasSensitiveConfig: false,
+    hasStoredSecret,
+    createdAt,
+    updatedAt
+  };
+}
+function createConnectorConfigService(repo, secretRepo, env) {
+  return {
+    list() {
+      const persisted = repo.list();
+      const items = /* @__PURE__ */ new Map();
+      for (const row of persisted) {
+        try {
+          if (row.connectorId === "minimax") {
+            const secret = secretRepo.getById("minimax");
+            items.set("minimax", buildMinimaxView(row.enabled, "db", secret !== void 0, row.createdAt, row.updatedAt));
+            continue;
+          }
+          if (row.connectorId === "stable-diffusion") {
+            const config = JSON.parse(row.config);
+            items.set(
+              "stable-diffusion",
+              buildStableDiffusionView(row.enabled, "db", config, false, row.createdAt, row.updatedAt)
+            );
+          }
+        } catch {
+          continue;
+        }
+      }
+      const now6 = (/* @__PURE__ */ new Date()).toISOString();
+      if (!items.has("minimax") && env.minimaxApiKey) {
+        items.set("minimax", buildMinimaxView(true, "env", true, now6, now6));
+      }
+      if (!items.has("stable-diffusion") && env.stableDiffusionBaseUrl) {
+        items.set(
+          "stable-diffusion",
+          buildStableDiffusionView(
+            true,
+            "env",
+            { baseUrl: env.stableDiffusionBaseUrl },
+            false,
+            now6,
+            now6
+          )
+        );
+      }
+      return Array.from(items.values());
+    },
+    upsert(input) {
+      const persistedConfig = input.connectorId === "minimax" ? "{}" : JSON.stringify(input.config);
+      const saved = repo.upsert({
+        connectorId: input.connectorId,
+        enabled: input.enabled,
+        config: persistedConfig
+      });
+      if (input.connectorId === "minimax") {
+        const config = MinimaxConnectorConfigSchema.parse(input.config);
+        if (config.apiKey) {
+          secretRepo.upsert({
+            connectorId: "minimax",
+            secret: config.apiKey
+          });
+        } else if (!secretRepo.getById("minimax")) {
+          throw new ConnectorConfigError(
+            "MiniMax API key is required before this connector can be enabled or saved.",
+            "SECRET_REQUIRED",
+            "minimax"
+          );
+        }
+        return buildMinimaxView(saved.enabled, "db", true, saved.createdAt, saved.updatedAt);
+      }
+      return buildStableDiffusionView(
+        saved.enabled,
+        "db",
+        input.config,
+        false,
+        saved.createdAt,
+        saved.updatedAt
+      );
+    }
+  };
+}
+
+// packages/connectors/src/mock.connector.ts
+var import_fs4 = __toESM(require("fs"), 1);
+var import_path4 = __toESM(require("path"), 1);
+var import_os = __toESM(require("os"), 1);
+var import_crypto6 = require("crypto");
+var MockConnector = class {
+  id = "mock";
+  name = "Mock Connector";
+  async healthCheck() {
+    const t = Date.now();
+    await Promise.resolve();
+    return { ok: true, latencyMs: Date.now() - t };
+  }
+  async generate(input) {
+    const t = Date.now();
+    const seed = (0, import_crypto6.randomUUID)();
+    const filePath = import_path4.default.join(import_os.default.tmpdir(), `starline-mock-${seed}.txt`);
+    const content = `mock:${input.prompt}|seed:${seed}|type:${input.type}`;
+    import_fs4.default.writeFileSync(filePath, content, "utf8");
+    return {
+      filePath,
+      mimeType: "text/plain",
+      name: input.prompt.slice(0, 80).trim() || "mock-output",
+      meta: { model: "mock-v1", seed, latencyMs: Date.now() - t }
+    };
+  }
+};
+
+// packages/connectors/src/minimax.connector.ts
+var import_fs5 = require("fs");
+var import_path5 = __toESM(require("path"), 1);
+var import_os2 = __toESM(require("os"), 1);
+var import_crypto7 = require("crypto");
+var API_BASE = "https://api.minimax.io/v1";
+var MODELS_URL = `${API_BASE}/models`;
+var GENERATE_URL = `${API_BASE}/image_generation`;
+var MIME_EXT2 = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp"
+};
+function extFor2(mime) {
+  return MIME_EXT2[mime] ?? "bin";
+}
+var MinimaxConnector = class {
+  constructor(apiKey, fetchFn = globalThis.fetch) {
+    this.apiKey = apiKey;
+    this.fetchFn = fetchFn;
+  }
+  id = "minimax";
+  name = "MiniMax Image";
+  async healthCheck() {
+    const start = Date.now();
+    const latencyMs = () => Date.now() - start;
+    try {
+      const res = await this.fetchFn(MODELS_URL, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${this.apiKey}` }
+      });
+      if (res.status === 200) {
+        return { ok: true, latencyMs: latencyMs() };
+      }
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, latencyMs: latencyMs(), error: "Authentication failed \u2014 check MINIMAX_API_KEY" };
+      }
+      if (res.status === 404 || res.status === 405) {
+        return this.apiKey ? { ok: true, latencyMs: latencyMs() } : { ok: false, latencyMs: latencyMs(), error: "No API key configured" };
+      }
+      return { ok: true, latencyMs: latencyMs() };
+    } catch (err) {
+      return { ok: false, latencyMs: latencyMs(), error: err.message };
+    }
+  }
+  async generate(input) {
+    const start = Date.now();
+    const seed = (0, import_crypto7.randomUUID)();
+    const genRes = await this.fetchFn(GENERATE_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "image-01",
+        prompt: input.prompt,
+        n: 1,
+        response_format: "url",
+        aspect_ratio: input.settings?.["aspect_ratio"] ?? "1:1",
+        seed
+      })
+    });
+    const json = await genRes.json();
+    if (json.base_resp.status_code !== 0) {
+      throw new Error(
+        `MiniMax API error: ${json.base_resp.status_msg} (code ${json.base_resp.status_code})`
+      );
+    }
+    const imageUrl = json.data.image_urls[0];
+    if (!imageUrl) {
+      throw new Error("MiniMax returned no image URLs");
+    }
+    const imgRes = await this.fetchFn(imageUrl);
+    const rawMime = imgRes.headers.get("content-type") ?? "image/png";
+    const mimeType = rawMime.split(";")[0]?.trim() ?? "image/png";
+    if (!mimeType.startsWith("image/")) {
+      throw new Error(`Unexpected content-type from image URL: ${mimeType}`);
+    }
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+    const ext = extFor2(mimeType);
+    const filePath = import_path5.default.join(import_os2.default.tmpdir(), `minimax-${(0, import_crypto7.randomUUID)()}.${ext}`);
+    (0, import_fs5.writeFileSync)(filePath, buffer);
+    return {
+      filePath,
+      mimeType,
+      name: input.prompt.slice(0, 80).trim() || "minimax-output",
+      meta: { model: "image-01", seed, latencyMs: Date.now() - start }
+    };
+  }
+};
+
+// packages/connectors/src/stable-diffusion.connector.ts
+var import_fs6 = require("fs");
+var import_os3 = __toESM(require("os"), 1);
+var import_path6 = __toESM(require("path"), 1);
+var import_crypto8 = require("crypto");
+function normalizeBaseUrl(baseUrl) {
+  return baseUrl.replace(/\/+$/, "");
+}
+function parseInfo(info) {
+  if (!info)
+    return {};
+  try {
+    const parsed = JSON.parse(info);
+    return {
+      seed: parsed["seed"] !== void 0 ? String(parsed["seed"]) : void 0,
+      model: typeof parsed["sd_model_name"] === "string" ? parsed["sd_model_name"] : typeof parsed["model"] === "string" ? parsed["model"] : void 0
+    };
+  } catch {
+    return {};
+  }
+}
+var StableDiffusionConnector = class {
+  constructor(baseUrl, fetchFn = globalThis.fetch) {
+    this.fetchFn = fetchFn;
+    this.baseUrl = normalizeBaseUrl(baseUrl);
+  }
+  id = "stable-diffusion";
+  name = "Stable Diffusion WebUI";
+  baseUrl;
+  async healthCheck() {
+    const start = Date.now();
+    const latencyMs = () => Date.now() - start;
+    try {
+      const response = await this.fetchFn(`${this.baseUrl}/sdapi/v1/options`, {
+        method: "GET"
+      });
+      if (response.status === 200) {
+        return { ok: true, latencyMs: latencyMs() };
+      }
+      return {
+        ok: false,
+        latencyMs: latencyMs(),
+        error: `Stable Diffusion health check failed with status ${response.status}`
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        latencyMs: latencyMs(),
+        error: error.message
+      };
+    }
+  }
+  async generate(input) {
+    if (input.type !== "image") {
+      throw Object.assign(
+        new Error("Stable Diffusion connector only supports image generation"),
+        { retryable: false }
+      );
+    }
+    const start = Date.now();
+    const response = await this.fetchFn(`${this.baseUrl}/sdapi/v1/txt2img`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        prompt: input.prompt,
+        steps: typeof input.settings?.["steps"] === "number" ? input.settings["steps"] : 20,
+        width: typeof input.settings?.["width"] === "number" ? input.settings["width"] : 1024,
+        height: typeof input.settings?.["height"] === "number" ? input.settings["height"] : 1024,
+        sampler_name: typeof input.settings?.["sampler_name"] === "string" ? input.settings["sampler_name"] : "Euler a"
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`Stable Diffusion generation failed with status ${response.status}`);
+    }
+    const json = await response.json();
+    const base64Image = json.images?.[0];
+    if (!base64Image) {
+      throw new Error("Stable Diffusion returned no images");
+    }
+    const buffer = Buffer.from(base64Image, "base64");
+    const filePath = import_path6.default.join(import_os3.default.tmpdir(), `stable-diffusion-${(0, import_crypto8.randomUUID)()}.png`);
+    (0, import_fs6.writeFileSync)(filePath, buffer);
+    const info = parseInfo(json.info);
+    return {
+      filePath,
+      mimeType: "image/png",
+      name: input.prompt.slice(0, 80).trim() || "stable-diffusion-output",
+      meta: {
+        model: info.model ?? "automatic1111-webui",
+        seed: info.seed ?? (0, import_crypto8.randomUUID)(),
+        latencyMs: Date.now() - start
+      }
+    };
+  }
+};
+
+// node_modules/.pnpm/drizzle-orm@0.31.4_@types+b_d6200a5e5bcea09e37cc0206e17bf88f/node_modules/drizzle-orm/migrator.js
+var import_node_crypto = __toESM(require("node:crypto"), 1);
+var import_node_fs = __toESM(require("node:fs"), 1);
+var import_node_path = __toESM(require("node:path"), 1);
+function readMigrationFiles(config) {
+  let migrationFolderTo;
+  if (typeof config === "string") {
+    const configAsString = import_node_fs.default.readFileSync(import_node_path.default.resolve(".", config), "utf8");
+    const jsonConfig = JSON.parse(configAsString);
+    migrationFolderTo = jsonConfig.out;
+  } else {
+    migrationFolderTo = config.migrationsFolder;
+  }
+  if (!migrationFolderTo) {
+    throw new Error("no migration folder defined");
+  }
+  const migrationQueries = [];
+  const journalPath = `${migrationFolderTo}/meta/_journal.json`;
+  if (!import_node_fs.default.existsSync(journalPath)) {
+    throw new Error(`Can't find meta/_journal.json file`);
+  }
+  const journalAsString = import_node_fs.default.readFileSync(`${migrationFolderTo}/meta/_journal.json`).toString();
+  const journal = JSON.parse(journalAsString);
+  for (const journalEntry of journal.entries) {
+    const migrationPath = `${migrationFolderTo}/${journalEntry.tag}.sql`;
+    try {
+      const query = import_node_fs.default.readFileSync(`${migrationFolderTo}/${journalEntry.tag}.sql`).toString();
+      const result = query.split("--> statement-breakpoint").map((it) => {
+        return it;
+      });
+      migrationQueries.push({
+        sql: result,
+        bps: journalEntry.breakpoints,
+        folderMillis: journalEntry.when,
+        hash: import_node_crypto.default.createHash("sha256").update(query).digest("hex")
+      });
+    } catch {
+      throw new Error(`No file ${migrationPath} found in ${migrationFolderTo} folder`);
+    }
+  }
+  return migrationQueries;
+}
+
+// node_modules/.pnpm/drizzle-orm@0.31.4_@types+b_d6200a5e5bcea09e37cc0206e17bf88f/node_modules/drizzle-orm/better-sqlite3/migrator.js
+function migrate(db, config) {
+  const migrations = readMigrationFiles(config);
+  db.dialect.migrate(migrations, db.session, config);
+}
+
+// packages/storage/src/migrate.ts
+var import_path7 = __toESM(require("path"), 1);
+var import_url = require("url");
+function resolveModuleFilename() {
+  if (typeof __filename === "string") {
+    return __filename;
+  }
+  const stack = new Error().stack;
+  if (!stack) {
+    throw new Error("Unable to resolve migration module filename from stack");
+  }
+  const frames = stack.split("\n").slice(1);
+  for (const frame of frames) {
+    const fileUrlMatch = frame.match(/(file:\/\/\/[^\s)]+):\d+:\d+/);
+    if (fileUrlMatch) {
+      return (0, import_url.fileURLToPath)(fileUrlMatch[1]);
+    }
+    const windowsPathMatch = frame.match(/([A-Za-z]:\\[^():]+):\d+:\d+/);
+    if (windowsPathMatch) {
+      return windowsPathMatch[1];
+    }
+  }
+  throw new Error("Unable to resolve migration module filename from stack");
+}
+var moduleFilename = resolveModuleFilename();
+var moduleDirname = import_path7.default.dirname(moduleFilename);
+function runMigrations(dbPath) {
+  const db = getDb(dbPath);
+  const migrationsFolder = import_path7.default.join(moduleDirname, "..", "migrations");
+  migrate(db, { migrationsFolder });
+  const sqlite = getSqlite();
+  sqlite.prepare(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS assets_fts
+    USING fts5(id UNINDEXED, name, tags, description)
+  `).run();
+  sqlite.prepare(`
+    INSERT INTO assets_fts(id, name, tags, description)
+    SELECT a.id, a.name, a.tags, COALESCE(a.description, '')
+    FROM assets a
+    WHERE a.id NOT IN (SELECT id FROM assets_fts)
+  `).run();
+}
+if (process.argv[1] === moduleFilename) {
+  const dbPath = process.env["DB_PATH"] ?? "./starline-dev.db";
+  runMigrations(dbPath);
+  console.log("Migrations applied to", dbPath);
+}
+
 // apps/local-api/dist/routes/projects.js
 function registerProjectRoutes(app2, projectService) {
   app2.post("/api/projects", async (req, reply) => {
@@ -44262,6 +44503,64 @@ function registerGenerationRoutes(app2, generationService) {
   });
 }
 
+// apps/local-api/dist/routes/connectors.js
+function registerConnectorRoutes(app2, connectorConfigService) {
+  app2.get("/api/connectors", async (_req, reply) => {
+    return reply.send({ items: connectorConfigService.list() });
+  });
+  app2.post("/api/connectors", async (req, reply) => {
+    const input = ConnectorConfigUpsertSchema.parse(req.body);
+    const item = connectorConfigService.upsert(input);
+    return reply.code(200).send({ item });
+  });
+}
+
+// apps/local-api/dist/connectors.runtime.js
+function buildConfiguredConnectors(repo, secretRepo, env, logger) {
+  const configured = /* @__PURE__ */ new Map();
+  const persisted = new Map(repo.list().map((row) => [row.connectorId, row]));
+  const minimaxRow = persisted.get("minimax");
+  if (minimaxRow) {
+    if (minimaxRow.enabled) {
+      try {
+        const secret = secretRepo.getById("minimax");
+        if (!secret?.secret) {
+          throw new Error("Missing stored secret");
+        }
+        configured.set("minimax", new MinimaxConnector(secret.secret));
+      } catch (error) {
+        logger.warn({
+          event: "connector.config.invalid",
+          connectorId: "minimax",
+          source: "db",
+          error: error.message
+        }, "skipping invalid persisted connector config");
+      }
+    }
+  } else if (env.minimaxApiKey) {
+    configured.set("minimax", new MinimaxConnector(env.minimaxApiKey));
+  }
+  const stableDiffusionRow = persisted.get("stable-diffusion");
+  if (stableDiffusionRow) {
+    if (stableDiffusionRow.enabled) {
+      try {
+        const config = StableDiffusionConnectorConfigSchema.parse(JSON.parse(stableDiffusionRow.config));
+        configured.set("stable-diffusion", new StableDiffusionConnector(config.baseUrl));
+      } catch (error) {
+        logger.warn({
+          event: "connector.config.invalid",
+          connectorId: "stable-diffusion",
+          source: "db",
+          error: error.message
+        }, "skipping invalid persisted connector config");
+      }
+    }
+  } else if (env.stableDiffusionBaseUrl) {
+    configured.set("stable-diffusion", new StableDiffusionConnector(env.stableDiffusionBaseUrl));
+  }
+  return configured;
+}
+
 // apps/local-api/dist/server.js
 function resolveGenerationConcurrency(envValue, logger, override) {
   if (override !== void 0)
@@ -44289,18 +44588,20 @@ function buildServer(dbPath, options) {
   const assetRepo = createAssetRepository(db, sqlite);
   const assetService = createAssetService(assetRepo, computeFileHash);
   const generationRepo = createGenerationRepository(db);
+  const connectorConfigRepo = createConnectorConfigRepository(db);
+  const connectorSecretRepo = createConnectorSecretRepository(db);
+  const connectorConfigService = createConnectorConfigService(connectorConfigRepo, connectorSecretRepo, {
+    minimaxApiKey: process.env["MINIMAX_API_KEY"],
+    stableDiffusionBaseUrl: process.env["STABLE_DIFFUSION_BASE_URL"]
+  });
   const appDataDir = import_path8.default.join(import_path8.default.dirname(dbPath), "assets");
   const connectorRegistry = /* @__PURE__ */ new Map([
     ["mock", new MockConnector()]
   ]);
-  const minimaxKey = process.env["MINIMAX_API_KEY"];
-  if (minimaxKey) {
-    connectorRegistry.set("minimax", new MinimaxConnector(minimaxKey));
-  }
-  const stableDiffusionBaseUrl = process.env["STABLE_DIFFUSION_BASE_URL"];
-  if (stableDiffusionBaseUrl) {
-    connectorRegistry.set("stable-diffusion", new StableDiffusionConnector(stableDiffusionBaseUrl));
-  }
+  buildConfiguredConnectors(connectorConfigRepo, connectorSecretRepo, {
+    minimaxApiKey: process.env["MINIMAX_API_KEY"],
+    stableDiffusionBaseUrl: process.env["STABLE_DIFFUSION_BASE_URL"]
+  }, app2.log).forEach((connector, id) => connectorRegistry.set(id, connector));
   options?.extraConnectors?.forEach((c, id) => connectorRegistry.set(id, c));
   const generationConcurrency = resolveGenerationConcurrency(process.env["GENERATION_CONCURRENCY"], app2.log, options?.generationConcurrency);
   app2.log.info({
@@ -44315,11 +44616,19 @@ function buildServer(dbPath, options) {
   app2.get("/health", async () => ({ status: "ok" }));
   registerProjectRoutes(app2, projectService);
   registerAssetRoutes(app2, assetService);
+  registerConnectorRoutes(app2, connectorConfigService);
   registerGenerationRoutes(app2, generationService);
   app2.setErrorHandler((err, _req, reply) => {
     if (err instanceof ConnectorError) {
       const status = err.code === "CONNECTOR_NOT_FOUND" ? 404 : 502;
       return reply.code(status).send({
+        error: err.message,
+        code: err.code,
+        connectorId: err.connectorId
+      });
+    }
+    if (err instanceof ConnectorConfigError) {
+      return reply.code(400).send({
         error: err.message,
         code: err.code,
         connectorId: err.connectorId

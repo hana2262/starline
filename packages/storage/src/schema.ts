@@ -70,3 +70,24 @@ export const generations = sqliteTable("generations", {
 
 export type Generation    = typeof generations.$inferSelect;
 export type NewGeneration = typeof generations.$inferInsert;
+
+export const connectorConfigs = sqliteTable("connector_configs", {
+  connectorId: text("connector_id").primaryKey(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  config: text("config").notNull().default("{}"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export type ConnectorConfig = typeof connectorConfigs.$inferSelect;
+export type NewConnectorConfig = typeof connectorConfigs.$inferInsert;
+
+export const connectorSecrets = sqliteTable("connector_secrets", {
+  connectorId: text("connector_id").primaryKey(),
+  secret: text("secret").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export type ConnectorSecret = typeof connectorSecrets.$inferSelect;
+export type NewConnectorSecret = typeof connectorSecrets.$inferInsert;

@@ -6,4 +6,8 @@ export { createAssetRepository } from "./asset.repository.js";
 export type { AssetRepository, AssetRow } from "./asset.repository.js";
 export { createGenerationRepository } from "./generation.repository.js";
 export type { GenerationRepository, GenerationRow } from "./generation.repository.js";
+export { createConnectorConfigRepository } from "./connector.repository.js";
+export type { ConnectorConfigRepository } from "./connector.repository.js";
+export { createConnectorSecretRepository } from "./connector-secret.repository.js";
+export type { ConnectorSecretRepository } from "./connector-secret.repository.js";
 export * from "./schema.js";

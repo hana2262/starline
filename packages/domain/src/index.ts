@@ -6,4 +6,7 @@ export { computeFileHash } from "./asset/file.utils.js";
 export { createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError } from "./generation/generation.service.js";
 export type { GenerationService } from "./generation/generation.service.js";
 export { GenerationQueue } from "./generation/generation.queue.js";
+export { createConnectorConfigService } from "./connector/connector-config.service.js";
+export type { ConnectorConfigService, ConnectorEnvFallbacks } from "./connector/connector-config.service.js";
+export { ConnectorConfigError } from "./connector/connector-config.service.js";
 export type { ListAssetsQuery, AssetListResponse } from "@starline/shared";
