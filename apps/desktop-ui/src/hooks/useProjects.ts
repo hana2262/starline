@@ -4,8 +4,8 @@ import type { CreateProjectInput, UpdateProjectInput } from "@starline/shared";
 
 const QUERY_KEY = ["projects"] as const;
 
-export function useProjects() {
-  return useQuery({ queryKey: QUERY_KEY, queryFn: projectsApi.list });
+export function useProjects(enabled = true) {
+  return useQuery({ queryKey: QUERY_KEY, queryFn: projectsApi.list, enabled });
 }
 
 export function useCreateProject() {

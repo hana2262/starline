@@ -62,3 +62,23 @@ export const GenerationListResultSchema = z.object({
   nextCursor: z.string().nullable(),
 });
 export type GenerationListResult = z.infer<typeof GenerationListResultSchema>;
+
+export const GenerationMetricsSchema = z.object({
+  submitted: z.number().int().nonnegative(),
+  succeeded: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  cancelled: z.number().int().nonnegative(),
+  autoRetryCount: z.number().int().nonnegative(),
+  manualRetryCount: z.number().int().nonnegative(),
+  successRate: z.number().min(0),
+  avgDurationMs: z.number().int().nonnegative().nullable(),
+  failureCodeCounts: z.record(z.number().int().nonnegative()),
+});
+export type GenerationMetrics = z.infer<typeof GenerationMetricsSchema>;
+
+export const GenerationMetricsResultSchema = z.object({
+  metrics: GenerationMetricsSchema,
+  scope: z.literal("process"),
+  startedAt: z.string(),
+});
+export type GenerationMetricsResult = z.infer<typeof GenerationMetricsResultSchema>;

@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1776351326011,
+      "tag": "0000_jittery_charles_xavier",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1776353053284,
+      "tag": "0001_quick_the_enforcers",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1776359456589,
+      "tag": "0002_elite_photon",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1776390640631,
+      "tag": "0003_funny_gwen_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1776395040556,
+      "tag": "0004_futuristic_odin",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1776398556465,
+      "tag": "0005_bitter_ben_grimm",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1776424068244,
+      "tag": "0006_careful_the_anarchist",
+      "breakpoints": true
+    }
+  ]
+}

@@ -6,24 +6,28 @@ import AssetImportForm from "../components/AssetImportForm.js";
 import AssetList from "../components/AssetList.js";
 
 interface Props {
+  apiReady: boolean;
   projects: ProjectResponse[];
 }
 
 const PAGE_SIZE = 10;
 
-export default function AssetsPage({ projects }: Props) {
+export default function AssetsPage({ apiReady, projects }: Props) {
   const [query, setQuery] = useState("");
   const [selectedType, setSelectedType] = useState<AssetType | "">("");
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [page, setPage] = useState(0);
 
-  const result = useAssets({
-    query: query.trim() || undefined,
-    projectId: selectedProjectId || undefined,
-    type: selectedType || undefined,
-    limit: PAGE_SIZE,
-    offset: page * PAGE_SIZE,
-  });
+  const result = useAssets(
+    {
+      query: query.trim() || undefined,
+      projectId: selectedProjectId || undefined,
+      type: selectedType || undefined,
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
+    },
+    apiReady,
+  );
 
   const totalPages = useMemo(() => {
     if (!result.data) return 1;
@@ -106,4 +110,3 @@ export default function AssetsPage({ projects }: Props) {
     </div>
   );
 }
-

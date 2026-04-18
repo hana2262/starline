@@ -30,6 +30,11 @@ export function registerGenerationRoutes(app: FastifyInstance, generationService
     return reply.send(result);
   });
 
+  app.get("/api/generation/metrics", async (_req, reply) => {
+    const result = generationService.getMetrics();
+    return reply.send(result);
+  });
+
   app.post<{ Params: { id: string } }>("/api/generation/:id/retry", async (req, reply) => {
     const result = generationService.retry(req.params.id);
     return reply.code(202).send(result);

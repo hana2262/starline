@@ -8,7 +8,10 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "tauri:check": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "tauri:dev": "tauri dev",
+    "tauri:build:minimal": "pnpm --dir ../local-api build && node ./scripts/prepare-release-runtime.mjs && pnpm build && tauri build --no-bundle"
   },
   "dependencies": {
     "@starline/shared": "workspace:*",
@@ -18,6 +21,7 @@
     "zustand": "^4.5.4"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

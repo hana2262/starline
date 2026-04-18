@@ -3,7 +3,7 @@ import type { FastifyBaseLogger } from "fastify";
 import path from "path";
 import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository } from "@starline/storage";
 import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError } from "@starline/domain";
-import { MockConnector, MinimaxConnector } from "@starline/connectors";
+import { MockConnector, MinimaxConnector, StableDiffusionConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
 import { runMigrations } from "@starline/storage/src/migrate.js";
 import { registerProjectRoutes } from "./routes/projects.js";
@@ -57,6 +57,11 @@ export function buildServer(
   const minimaxKey = process.env["MINIMAX_API_KEY"];
   if (minimaxKey) {
     connectorRegistry.set("minimax", new MinimaxConnector(minimaxKey));
+  }
+
+  const stableDiffusionBaseUrl = process.env["STABLE_DIFFUSION_BASE_URL"];
+  if (stableDiffusionBaseUrl) {
+    connectorRegistry.set("stable-diffusion", new StableDiffusionConnector(stableDiffusionBaseUrl));
   }
 
   options?.extraConnectors?.forEach((c, id) => connectorRegistry.set(id, c));

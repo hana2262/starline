@@ -8,8 +8,9 @@ import type {
   ImportAssetResult,
   ListAssetsQuery,
 } from "@starline/shared";
+import { API_BASE } from "./runtime.js";
 
-const BASE = "/api";
+const BASE = API_BASE;
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${url}`, {

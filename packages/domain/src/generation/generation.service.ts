@@ -9,6 +9,8 @@ import type {
   GenerationJob,
   GenerationListQuery,
   GenerationListResult,
+  GenerationMetrics,
+  GenerationMetricsResult,
 } from "@starline/shared";
 import type { computeFileHash } from "../asset/file.utils.js";
 import { GenerationQueue } from "./generation.queue.js";
@@ -68,10 +70,12 @@ type GenerationMetricsState = {
   succeeded: number;
   failed: number;
   cancelled: number;
-  retryCount: number;
+  autoRetryCount: number;
+  manualRetryCount: number;
   failureCodeCounts: Record<string, number>;
   durationSampleCount: number;
   totalDurationMs: number;
+  startedAt: string;
 };
 
 const MIME_EXT: Record<string, string> = {
@@ -165,11 +169,38 @@ export function createGenerationService(
     succeeded: 0,
     failed: 0,
     cancelled: 0,
-    retryCount: 0,
+    autoRetryCount: 0,
+    manualRetryCount: 0,
     failureCodeCounts: {},
     durationSampleCount: 0,
     totalDurationMs: 0,
+    startedAt: new Date().toISOString(),
   };
+
+  function toMetricsSnapshot(): GenerationMetricsResult {
+    const successRate = metrics.submitted > 0 ? Number((metrics.succeeded / metrics.submitted).toFixed(4)) : 0;
+    const avgDurationMs = metrics.durationSampleCount > 0
+      ? Math.round(metrics.totalDurationMs / metrics.durationSampleCount)
+      : null;
+
+    const payload: GenerationMetrics = {
+      submitted: metrics.submitted,
+      succeeded: metrics.succeeded,
+      failed: metrics.failed,
+      cancelled: metrics.cancelled,
+      autoRetryCount: metrics.autoRetryCount,
+      manualRetryCount: metrics.manualRetryCount,
+      successRate,
+      avgDurationMs,
+      failureCodeCounts: { ...metrics.failureCodeCounts },
+    };
+
+    return {
+      metrics: payload,
+      scope: "process",
+      startedAt: metrics.startedAt,
+    };
+  }
 
   function recordDuration(row: GenerationRow): number | null {
     if (!row.startedAt) return null;
@@ -180,6 +211,7 @@ export function createGenerationService(
   }
 
   function logMetrics(event: string, row: GenerationRow, extra?: Record<string, unknown>): void {
+    const snapshot = toMetricsSnapshot();
     logger?.info({
       event: "generation.metrics",
       metricEvent: event,
@@ -187,18 +219,7 @@ export function createGenerationService(
       status: row.status,
       connectorId: row.connectorId,
       attemptCount: row.attemptCount,
-      successRate: metrics.submitted > 0 ? Number((metrics.succeeded / metrics.submitted).toFixed(4)) : 0,
-      avgDurationMs: metrics.durationSampleCount > 0
-        ? Math.round(metrics.totalDurationMs / metrics.durationSampleCount)
-        : null,
-      retryCount: metrics.retryCount,
-      totals: {
-        submitted: metrics.submitted,
-        succeeded: metrics.succeeded,
-        failed: metrics.failed,
-        cancelled: metrics.cancelled,
-      },
-      failureCodeCounts: metrics.failureCodeCounts,
+      ...snapshot.metrics,
       ...extra,
     }, "generation metrics updated");
   }
@@ -250,8 +271,8 @@ export function createGenerationService(
       const delay = Math.min(Math.pow(2, row.attemptCount - 1) * retryBaseMs, maxRetryDelayMs);
       const nextRetryAt = new Date(Date.now() + delay).toISOString();
       genRepo.markRetrying(jobId, nextRetryAt);
-      metrics.retryCount++;
-      logMetrics("retry_scheduled", row, { errorCode: code, nextRetryAt });
+      metrics.autoRetryCount++;
+      logMetrics("auto_retry_scheduled", row, { errorCode: code, nextRetryAt });
       queue.scheduleRetry(jobId, delay);
       return;
     }
@@ -425,6 +446,10 @@ export function createGenerationService(
       return row ? toJobResponse(row) : null;
     },
 
+    getMetrics(): GenerationMetricsResult {
+      return toMetricsSnapshot();
+    },
+
     listJobs(query: GenerationListQuery): GenerationListResult {
       const page = genRepo.list({
         status: query.status,
@@ -482,14 +507,14 @@ export function createGenerationService(
       }
 
       genRepo.requeue(jobId);
-      metrics.retryCount++;
+      metrics.manualRetryCount++;
       const queued = genRepo.getById(jobId);
       if (!queued) {
         throw new GenerationRetryError(`Generation job not found: ${jobId}`, "JOB_NOT_FOUND", jobId);
       }
 
       queue.push(jobId);
-      logMetrics("retry_requeued", queued);
+      logMetrics("manual_retry_requeued", queued);
       return { job: toJobResponse(queued) };
     },
 

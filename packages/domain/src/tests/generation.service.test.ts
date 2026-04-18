@@ -342,10 +342,27 @@ describe("generationService execution success path", () => {
       expect.objectContaining({
         event: "generation.metrics",
         metricEvent: "succeeded",
-        totals: expect.objectContaining({ submitted: 1, succeeded: 1 }),
+        submitted: 1,
+        succeeded: 1,
+        autoRetryCount: 0,
+        manualRetryCount: 0,
       }),
       "generation metrics updated",
     );
+  });
+
+  it("returns metrics snapshot via getMetrics()", async () => {
+    const { service } = makeService();
+    await service.enqueue({ connectorId: "mock", prompt: "a cat", type: "image" });
+    await service.queue.waitForIdle();
+
+    const result = service.getMetrics();
+    expect(result.scope).toBe("process");
+    expect(result.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(result.metrics.submitted).toBe(1);
+    expect(result.metrics.succeeded).toBe(1);
+    expect(result.metrics.autoRetryCount).toBe(0);
+    expect(result.metrics.manualRetryCount).toBe(0);
   });
 });
 
@@ -404,8 +421,9 @@ describe("generationService failure and retry behavior", () => {
     expect(metricPayloads).toEqual(expect.arrayContaining([
       expect.objectContaining({
         event: "generation.metrics",
-        metricEvent: "retry_scheduled",
-        retryCount: expect.any(Number),
+        metricEvent: "auto_retry_scheduled",
+        autoRetryCount: expect.any(Number),
+        manualRetryCount: 0,
       }),
     ]));
   });
@@ -466,6 +484,27 @@ describe("generationService getJob and retry", () => {
     const result = service.retry("job-1");
     expect(genRepo.requeue).toHaveBeenCalledWith("job-1");
     expect(result.job.status).toBe("queued");
+  });
+
+  it("tracks manual retry count separately", () => {
+    const failedRow = makeGenerationRow({
+      status: "failed",
+      errorCode: "GENERATION_FAILED",
+      errorMessage: "transient provider error",
+      attemptCount: 3,
+      retryable: 1,
+      finishedAt: "2026-01-01T00:00:02.000Z",
+    });
+    const { service } = makeService({}, {}, {
+      getById: vi.fn()
+        .mockReturnValueOnce(failedRow)
+        .mockReturnValueOnce({ ...failedRow, status: "queued", errorCode: null, errorMessage: null, attemptCount: 0, retryable: null, finishedAt: null }),
+    });
+
+    service.retry("job-1");
+    const metrics = service.getMetrics();
+    expect(metrics.metrics.autoRetryCount).toBe(0);
+    expect(metrics.metrics.manualRetryCount).toBe(1);
   });
 });
 

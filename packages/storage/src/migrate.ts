@@ -3,11 +3,13 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { getDb, getSqlite } from "./db.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const moduleFilename =
+  typeof __filename === "string" ? __filename : fileURLToPath(import.meta.url);
+const moduleDirname = path.dirname(moduleFilename);
 
 export function runMigrations(dbPath: string) {
   const db = getDb(dbPath);
-  const migrationsFolder = path.join(__dirname, "..", "migrations");
+  const migrationsFolder = path.join(moduleDirname, "..", "migrations");
   migrate(db, { migrationsFolder });
 
   const sqlite = getSqlite();
@@ -28,7 +30,7 @@ export function runMigrations(dbPath: string) {
 }
 
 // Allow running directly: tsx src/migrate.ts
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (process.argv[1] === moduleFilename) {
   const dbPath = process.env["DB_PATH"] ?? "./starline-dev.db";
   runMigrations(dbPath);
   console.log("Migrations applied to", dbPath);

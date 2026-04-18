@@ -1,6 +1,10 @@
 import type { ProjectResponse } from "@starline/shared";
+import { useState } from "react";
+import { useAssets } from "../hooks/useAssets.js";
+import AssetList from "../components/AssetList.js";
 
 interface Props {
+  apiReady: boolean;
   project: ProjectResponse | undefined;
   isLoading: boolean;
   isError: boolean;
@@ -9,6 +13,23 @@ interface Props {
 }
 
 export default function ProjectDetailPage(props: Props) {
+  const [page, setPage] = useState(0);
+  const pageSize = 5;
+  const projectAssets = useAssets(
+    {
+      query: undefined,
+      projectId: props.project?.id,
+      type: undefined,
+      limit: pageSize,
+      offset: page * pageSize,
+    },
+    props.apiReady && Boolean(props.project?.id),
+  );
+
+  const totalPages = projectAssets.data
+    ? Math.max(1, Math.ceil(projectAssets.data.total / pageSize))
+    : 1;
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <button
@@ -69,8 +90,46 @@ export default function ProjectDetailPage(props: Props) {
           <section className="bg-white border border-dashed border-gray-300 rounded-lg p-6">
             <h3 className="text-lg font-semibold text-gray-900">Project Assets</h3>
             <p className="text-sm text-gray-500 mt-2">
-              Sprint-1 adds the project workspace entry point. Linked asset rendering stays for the next slice.
+              Assets linked to this project through existing `projectId` linkage.
             </p>
+
+            <div className="mt-4">
+              {projectAssets.isLoading && <p className="text-sm text-gray-500">Loading project assets...</p>}
+              {projectAssets.isError && (
+                <p className="text-sm text-red-600">Failed to load project assets: {String(projectAssets.error)}</p>
+              )}
+              {projectAssets.data && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-sm text-gray-500">
+                    <span>
+                      Showing {projectAssets.data.items.length} of {projectAssets.data.total} assets
+                    </span>
+                    <span>
+                      Page {page + 1} / {totalPages}
+                    </span>
+                  </div>
+
+                  <AssetList result={projectAssets.data} />
+
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => setPage((current) => Math.max(0, current - 1))}
+                      disabled={page === 0}
+                      className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
+                      disabled={page >= totalPages - 1}
+                      className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </section>
         </>
       )}

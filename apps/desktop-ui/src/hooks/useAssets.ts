@@ -10,7 +10,7 @@ interface UseAssetsInput {
   offset: number;
 }
 
-export function useAssets(input: UseAssetsInput) {
+export function useAssets(input: UseAssetsInput, enabled = true) {
   return useQuery({
     queryKey: ["assets", input],
     queryFn: () =>
@@ -21,6 +21,6 @@ export function useAssets(input: UseAssetsInput) {
         limit: input.limit,
         offset: input.offset,
       }),
+    enabled,
   });
 }
-

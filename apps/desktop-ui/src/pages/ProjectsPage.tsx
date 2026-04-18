@@ -4,12 +4,13 @@ import ProjectList from "../components/ProjectList.js";
 import ProjectCreateModal from "../components/ProjectCreateModal.js";
 
 interface Props {
+  apiReady: boolean;
   onOpenProject?: (projectId: string) => void;
 }
 
-export default function ProjectsPage({ onOpenProject }: Props) {
+export default function ProjectsPage({ apiReady, onOpenProject }: Props) {
   const [showCreate, setShowCreate] = useState(false);
-  const { data: projects, isLoading, isError, error } = useProjects();
+  const { data: projects, isLoading, isError, error } = useProjects(apiReady);
 
   return (
     <div className="max-w-2xl mx-auto">
