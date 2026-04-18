@@ -9,4 +9,6 @@ export { GenerationQueue } from "./generation/generation.queue.js";
 export { createConnectorConfigService } from "./connector/connector-config.service.js";
 export type { ConnectorConfigService, ConnectorEnvFallbacks } from "./connector/connector-config.service.js";
 export { ConnectorConfigError } from "./connector/connector-config.service.js";
+export { createAgentService, AgentError } from "./agent/agent.service.js";
+export type { AgentService } from "./agent/agent.service.js";
 export type { ListAssetsQuery, AssetListResponse } from "@starline/shared";

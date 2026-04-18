@@ -91,3 +91,30 @@ export const connectorSecrets = sqliteTable("connector_secrets", {
 
 export type ConnectorSecret = typeof connectorSecrets.$inferSelect;
 export type NewConnectorSecret = typeof connectorSecrets.$inferInsert;
+
+export const agentSessions = sqliteTable("agent_sessions", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id"),
+  title: text("title").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => ({
+  projectUpdatedIdx: index("agent_sessions_project_updated_idx").on(table.projectId, table.updatedAt),
+}));
+
+export type AgentSession = typeof agentSessions.$inferSelect;
+export type NewAgentSession = typeof agentSessions.$inferInsert;
+
+export const agentMessages = sqliteTable("agent_messages", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull(),
+  role: text("role", { enum: ["user", "assistant"] }).notNull(),
+  content: text("content").notNull(),
+  relatedAssetIds: text("related_asset_ids").notNull().default("[]"),
+  createdAt: text("created_at").notNull(),
+}, (table) => ({
+  sessionCreatedIdx: index("agent_messages_session_created_idx").on(table.sessionId, table.createdAt),
+}));
+
+export type AgentMessage = typeof agentMessages.$inferSelect;
+export type NewAgentMessage = typeof agentMessages.$inferInsert;

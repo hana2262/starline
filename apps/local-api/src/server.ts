@@ -1,8 +1,8 @@
 import Fastify from "fastify";
 import type { FastifyBaseLogger } from "fastify";
 import path from "path";
-import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository, createConnectorConfigRepository, createConnectorSecretRepository } from "@starline/storage";
-import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError } from "@starline/domain";
+import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository, createConnectorConfigRepository, createConnectorSecretRepository, createAgentRepository } from "@starline/storage";
+import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError, createAgentService, AgentError } from "@starline/domain";
 import { MockConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
 import { runMigrations } from "@starline/storage/src/migrate.js";
@@ -10,6 +10,7 @@ import { registerProjectRoutes } from "./routes/projects.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerGenerationRoutes } from "./routes/generation.js";
 import { registerConnectorRoutes } from "./routes/connectors.js";
+import { registerAgentRoutes } from "./routes/agent.js";
 import { buildConfiguredConnectors } from "./connectors.runtime.js";
 
 function resolveGenerationConcurrency(
@@ -52,6 +53,7 @@ export function buildServer(
   const generationRepo = createGenerationRepository(db);
   const connectorConfigRepo = createConnectorConfigRepository(db);
   const connectorSecretRepo = createConnectorSecretRepository(db);
+  const agentRepo = createAgentRepository(db);
   const connectorConfigService = createConnectorConfigService(
     connectorConfigRepo,
     connectorSecretRepo,
@@ -90,6 +92,7 @@ export function buildServer(
     connectorRegistry, assetRepo, generationRepo, computeFileHash, appDataDir,
     { retryBaseMs: options?.retryBaseMs, concurrency: generationConcurrency, logger: app.log },
   );
+  const agentService = createAgentService(agentRepo, projectRepo, assetRepo);
 
   generationService.recoverPendingJobs();
 
@@ -106,6 +109,7 @@ export function buildServer(
   registerAssetRoutes(app, assetService);
   registerConnectorRoutes(app, connectorConfigService);
   registerGenerationRoutes(app, generationService);
+  registerAgentRoutes(app, agentService);
 
   // Error handler: ConnectorError → 404/502; AssetImportError → 409/422; ZodError → 400; else → 500
   app.setErrorHandler((err, _req, reply) => {
@@ -122,6 +126,14 @@ export function buildServer(
         error: err.message,
         code: err.code,
         connectorId: err.connectorId,
+      });
+    }
+    if (err instanceof AgentError) {
+      const status = err.code === "SESSION_NOT_FOUND" || err.code === "PROJECT_NOT_FOUND" ? 404 : 409;
+      return reply.code(status).send({
+        error: err.message,
+        code: err.code,
+        ...err.details,
       });
     }
     if (err instanceof GenerationRetryError) {
