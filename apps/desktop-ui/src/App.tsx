@@ -3,12 +3,13 @@ import ProjectsPage from "./pages/ProjectsPage.js";
 import AssetsPage from "./pages/AssetsPage.js";
 import ProjectDetailPage from "./pages/ProjectDetailPage.js";
 import ConnectorsPage from "./pages/ConnectorsPage.js";
+import AgentPage from "./pages/AgentPage.js";
 import AppNav from "./components/AppNav.js";
 import { useProjects } from "./hooks/useProjects.js";
 import { useProject } from "./hooks/useProject.js";
 import { HEALTH_URL } from "./lib/runtime.js";
 
-type RootView = "projects" | "assets" | "connectors" | "project-detail";
+type RootView = "projects" | "assets" | "connectors" | "agent" | "project-detail";
 type BootStatus = "checking" | "ready" | "failed";
 
 export default function App() {
@@ -89,6 +90,10 @@ export default function App() {
       return <ConnectorsPage apiReady={apiReady} />;
     }
 
+    if (view === "agent") {
+      return <AgentPage apiReady={apiReady} projects={projects.data ?? []} />;
+    }
+
     if (view === "project-detail") {
       return (
         <ProjectDetailPage
@@ -110,7 +115,7 @@ export default function App() {
       <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold text-gray-900">StarLine</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Sprint-1 desktop usability slice</p>
+          <p className="text-xs text-gray-500 mt-0.5">Local-first creator workspace with retrieval-backed agent flows</p>
         </div>
         <AppNav
           activeView={activeNavView}

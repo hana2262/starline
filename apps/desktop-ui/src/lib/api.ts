@@ -11,6 +11,9 @@ import type {
   ConnectorConfigUpsertInput,
   ConnectorConfigUpsertResult,
   ConnectorHealthResponse,
+  AgentQueryInput,
+  AgentQueryResult,
+  AgentSessionResult,
 } from "@starline/shared";
 import { API_BASE } from "./runtime.js";
 
@@ -78,4 +81,13 @@ export const connectorsApi = {
     request<ConnectorHealthResponse>(`/connectors/${connectorId}/test`, {
       method: "POST",
     }),
+};
+
+export const agentApi = {
+  query: (input: AgentQueryInput) =>
+    request<AgentQueryResult>("/agent/query", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  getSession: (id: string) => request<AgentSessionResult>(`/agent/sessions/${id}`),
 };

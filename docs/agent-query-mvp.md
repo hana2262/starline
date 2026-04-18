@@ -2,16 +2,16 @@
 
 ## Scope
 
-This document describes the current backend-only Agent MVP slice for StarLine.
+This document describes the current Agent MVP slice for StarLine.
 
 Included:
 - local session persistence
 - local message persistence
 - retrieval-backed suggestions using project and asset context
 - API endpoints for query and session retrieval
+- desktop Agent page for asking questions, reviewing transcript, and seeing related assets
 
 Not included:
-- desktop Agent panel UI
 - streaming responses
 - external LLM integration
 - autonomous multi-step execution
@@ -51,6 +51,20 @@ Behavior:
 - returns the persisted session
 - returns all stored messages in chronological order
 - returns related assets referenced by prior assistant replies
+
+## Desktop UI
+
+Current desktop support:
+- top-level `Agent` navigation entry
+- project scope selector before a session starts
+- local transcript view for user and assistant messages
+- related asset sidebar based on the current session
+- session reload by persisted `sessionId`
+
+Current limits:
+- no session list/history browser yet
+- once a session starts, project scope stays fixed for that session
+- no inline asset preview or asset detail deep-link yet
 
 ## Retrieval Rules
 

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { AssetResponseSchema } from "./asset.schema.js";
 import { ProjectResponseSchema } from "./project.schema.js";
 
 export const AgentRoleSchema = z.enum(["user", "assistant"]);
