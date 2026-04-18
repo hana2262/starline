@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import ProjectsPage from "./pages/ProjectsPage.js";
 import AssetsPage from "./pages/AssetsPage.js";
 import ProjectDetailPage from "./pages/ProjectDetailPage.js";
+import ConnectorsPage from "./pages/ConnectorsPage.js";
 import AppNav from "./components/AppNav.js";
 import { useProjects } from "./hooks/useProjects.js";
 import { useProject } from "./hooks/useProject.js";
 import { HEALTH_URL } from "./lib/runtime.js";
 
-type RootView = "projects" | "assets" | "project-detail";
+type RootView = "projects" | "assets" | "connectors" | "project-detail";
 type BootStatus = "checking" | "ready" | "failed";
 
 export default function App() {
@@ -18,7 +19,11 @@ export default function App() {
   const projects = useProjects(apiReady);
   const selectedProject = useProject(selectedProjectId, apiReady);
 
-  const activeNavView = useMemo(() => (view === "assets" ? "assets" : "projects"), [view]);
+  const activeNavView = useMemo(() => {
+    if (view === "assets") return "assets";
+    if (view === "connectors") return "connectors";
+    return "projects";
+  }, [view]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +83,10 @@ export default function App() {
 
     if (view === "assets") {
       return <AssetsPage apiReady={apiReady} projects={projects.data ?? []} />;
+    }
+
+    if (view === "connectors") {
+      return <ConnectorsPage apiReady={apiReady} />;
     }
 
     if (view === "project-detail") {

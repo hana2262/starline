@@ -7,6 +7,10 @@ import type {
   ImportAssetInput,
   ImportAssetResult,
   ListAssetsQuery,
+  ConnectorConfigListResult,
+  ConnectorConfigUpsertInput,
+  ConnectorConfigUpsertResult,
+  ConnectorHealthResponse,
 } from "@starline/shared";
 import { API_BASE } from "./runtime.js";
 
@@ -60,5 +64,18 @@ export const assetsApi = {
     request<ImportAssetResult>("/assets/import", {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+};
+
+export const connectorsApi = {
+  list: () => request<ConnectorConfigListResult>("/connectors"),
+  save: (input: ConnectorConfigUpsertInput) =>
+    request<ConnectorConfigUpsertResult>("/connectors", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  test: (connectorId: string) =>
+    request<ConnectorHealthResponse>(`/connectors/${connectorId}/test`, {
+      method: "POST",
     }),
 };
