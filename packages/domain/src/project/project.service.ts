@@ -1,4 +1,4 @@
-import type { ProjectRepository } from "@starline/storage";
+import type { EventRepository, ProjectRepository } from "@starline/storage";
 import type {
   CreateProjectInput,
   UpdateProjectInput,
@@ -23,10 +23,19 @@ function toResponse(row: {
   };
 }
 
-export function createProjectService(repo: ProjectRepository) {
+export function createProjectService(repo: ProjectRepository, eventRepo?: EventRepository) {
   return {
     create(input: CreateProjectInput): ProjectResponse {
       const row = repo.create(input);
+      eventRepo?.create({
+        eventType: "project.created",
+        entityType: "project",
+        entityId: row.id,
+        projectId: row.id,
+        payload: {
+          status: row.status,
+        },
+      });
       return toResponse(row);
     },
 

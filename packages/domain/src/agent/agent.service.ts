@@ -1,4 +1,4 @@
-import type { AgentRepository, AgentMessageRow, AgentSession, AssetRepository, ProjectRepository } from "@starline/storage";
+import type { AgentRepository, AgentMessageRow, AgentSession, AssetRepository, EventRepository, ProjectRepository } from "@starline/storage";
 import type {
   AgentAssetReference,
   AgentMessage,
@@ -121,6 +121,7 @@ export function createAgentService(
   agentRepo: AgentRepository,
   projectRepo: ProjectRepository,
   assetRepo: AssetRepository,
+  eventRepo?: EventRepository,
 ) {
   return {
     query(input: AgentQueryInput): AgentQueryResult {
@@ -195,6 +196,16 @@ export function createAgentService(
         role: "assistant",
         content: assistantContent,
         relatedAssetIds: relatedAssets.map((asset) => asset.id),
+      });
+      eventRepo?.create({
+        eventType: "agent.queried",
+        entityType: "agent_session",
+        entityId: session.id,
+        projectId: effectiveProjectId,
+        payload: {
+          relatedAssetCount: relatedAssets.length,
+          queryLength: input.query.trim().length,
+        },
       });
 
       const refreshedSession = agentRepo.getSessionById(session.id);

@@ -2,7 +2,7 @@ import { mkdirSync, copyFileSync, unlinkSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import type { Connector, GenerateInput, GenerateOutput } from "@starline/connectors";
-import type { AssetRepository, AssetRow, GenerationRepository, GenerationRow } from "@starline/storage";
+import type { AssetRepository, AssetRow, EventRepository, GenerationRepository, GenerationRow } from "@starline/storage";
 import type {
   ConnectorHealthResponse,
   GenerationSubmitInput,
@@ -158,12 +158,14 @@ export function createGenerationService(
     maxRetryDelayMs?: number;
     concurrency?: number;
     logger?: GenerationLogger;
+    eventRepo?: EventRepository;
   },
 ) {
   const retryBaseMs = opts?.retryBaseMs ?? 1000;
   const maxRetryDelayMs = opts?.maxRetryDelayMs ?? 30_000;
   const concurrency = opts?.concurrency ?? 1;
   const logger = opts?.logger;
+  const eventRepo = opts?.eventRepo;
   const metrics: GenerationMetricsState = {
     submitted: 0,
     succeeded: 0,
@@ -244,6 +246,17 @@ export function createGenerationService(
     metrics.cancelled++;
     const durationMs = recordDuration(cancelledRow);
     logMetrics("cancelled", cancelledRow, { durationMs });
+    eventRepo?.create({
+      eventType: "generation.cancelled",
+      entityType: "generation",
+      entityId: cancelledRow.id,
+      projectId: cancelledRow.projectId,
+      payload: {
+        connectorId: cancelledRow.connectorId,
+        type: cancelledRow.type,
+        cancelReason: cancelledRow.cancelReason,
+      },
+    });
   }
 
   function getCurrentJobOrCancel(jobId: string): GenerationRow | null {
@@ -284,6 +297,18 @@ export function createGenerationService(
     metrics.failureCodeCounts[code] = (metrics.failureCodeCounts[code] ?? 0) + 1;
     const durationMs = recordDuration(failedRow);
     logMetrics("failed", failedRow, { durationMs, errorCode: code, retryable });
+    eventRepo?.create({
+      eventType: "generation.failed",
+      entityType: "generation",
+      entityId: failedRow.id,
+      projectId: failedRow.projectId,
+      payload: {
+        connectorId: failedRow.connectorId,
+        type: failedRow.type,
+        errorCode: code,
+        retryable,
+      },
+    });
   }
 
   async function executeJob(jobId: string): Promise<void> {
@@ -402,6 +427,17 @@ export function createGenerationService(
       metrics.succeeded++;
       const durationMs = recordDuration(succeededRow);
       logMetrics("succeeded", succeededRow, { durationMs, assetId: assetRow.id });
+      eventRepo?.create({
+        eventType: "generation.completed",
+        entityType: "generation",
+        entityId: succeededRow.id,
+        projectId: succeededRow.projectId,
+        payload: {
+          connectorId: succeededRow.connectorId,
+          type: succeededRow.type,
+          assetId: assetRow.id,
+        },
+      });
     }
     tryUnlink(output.filePath);
   }
@@ -438,6 +474,16 @@ export function createGenerationService(
       metrics.submitted++;
       queue.push(job.id);
       logMetrics("submitted", job);
+      eventRepo?.create({
+        eventType: "generation.submitted",
+        entityType: "generation",
+        entityId: job.id,
+        projectId: job.projectId,
+        payload: {
+          connectorId: job.connectorId,
+          type: job.type,
+        },
+      });
       return { job: toJobResponse(job) };
     },
 

@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import type { FastifyBaseLogger } from "fastify";
 import path from "path";
-import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository, createConnectorConfigRepository, createConnectorSecretRepository, createAgentRepository } from "@starline/storage";
+import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository, createConnectorConfigRepository, createConnectorSecretRepository, createAgentRepository, createEventRepository } from "@starline/storage";
 import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError, createAgentService, AgentError } from "@starline/domain";
 import { MockConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
@@ -46,10 +46,11 @@ export function buildServer(
   const sqlite = getSqlite();
 
   const projectRepo = createProjectRepository(db);
-  const projectService = createProjectService(projectRepo);
+  const eventRepo = createEventRepository(db);
+  const projectService = createProjectService(projectRepo, eventRepo);
 
   const assetRepo      = createAssetRepository(db, sqlite);
-  const assetService   = createAssetService(assetRepo, computeFileHash);
+  const assetService   = createAssetService(assetRepo, computeFileHash, eventRepo);
   const generationRepo = createGenerationRepository(db);
   const connectorConfigRepo = createConnectorConfigRepository(db);
   const connectorSecretRepo = createConnectorSecretRepository(db);
@@ -90,9 +91,9 @@ export function buildServer(
 
   const generationService = createGenerationService(
     connectorRegistry, assetRepo, generationRepo, computeFileHash, appDataDir,
-    { retryBaseMs: options?.retryBaseMs, concurrency: generationConcurrency, logger: app.log },
+    { retryBaseMs: options?.retryBaseMs, concurrency: generationConcurrency, logger: app.log, eventRepo },
   );
-  const agentService = createAgentService(agentRepo, projectRepo, assetRepo);
+  const agentService = createAgentService(agentRepo, projectRepo, assetRepo, eventRepo);
 
   generationService.recoverPendingJobs();
 

@@ -12,4 +12,6 @@ export { createConnectorSecretRepository } from "./connector-secret.repository.j
 export type { ConnectorSecretRepository } from "./connector-secret.repository.js";
 export { createAgentRepository } from "./agent.repository.js";
 export type { AgentRepository, AgentMessageRow } from "./agent.repository.js";
+export { createEventRepository } from "./event.repository.js";
+export type { EventRepository, EventRow } from "./event.repository.js";
 export * from "./schema.js";

@@ -118,3 +118,19 @@ export const agentMessages = sqliteTable("agent_messages", {
 
 export type AgentMessage = typeof agentMessages.$inferSelect;
 export type NewAgentMessage = typeof agentMessages.$inferInsert;
+
+export const events = sqliteTable("events", {
+  id: text("id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id"),
+  projectId: text("project_id"),
+  payload: text("payload").notNull().default("{}"),
+  createdAt: text("created_at").notNull(),
+}, (table) => ({
+  eventTypeCreatedIdx: index("events_event_type_created_idx").on(table.eventType, table.createdAt),
+  projectCreatedIdx: index("events_project_created_idx").on(table.projectId, table.createdAt),
+}));
+
+export type Event = typeof events.$inferSelect;
+export type NewEvent = typeof events.$inferInsert;

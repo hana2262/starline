@@ -1,7 +1,7 @@
 import { statSync } from "fs";
 import { basename } from "path";
 import { randomUUID } from "crypto";
-import type { AssetRepository } from "@starline/storage";
+import type { AssetRepository, EventRepository } from "@starline/storage";
 import type {
   ImportAssetInput,
   ImportAssetResult,
@@ -70,7 +70,7 @@ function isSqliteUniqueError(err: unknown): boolean {
   );
 }
 
-export function createAssetService(repo: AssetRepository, computeHash: ComputeHashFn) {
+export function createAssetService(repo: AssetRepository, computeHash: ComputeHashFn, eventRepo?: EventRepository) {
   return {
     async import(input: ImportAssetInput): Promise<ImportAssetResult> {
       // Step 1 — File exists check (before any hashing)
@@ -119,6 +119,18 @@ export function createAssetService(repo: AssetRepository, computeHash: ComputeHa
           contentHash: hash,
           tags:        input.tags ?? [],
           description: input.description ?? null,
+        });
+        eventRepo?.create({
+          eventType: "asset.imported",
+          entityType: "asset",
+          entityId: newAsset.id,
+          projectId: newAsset.projectId,
+          payload: {
+            type: newAsset.type,
+            fileSize: newAsset.fileSize,
+            mimeType: newAsset.mimeType,
+            source: "manual_import",
+          },
         });
         return { created: true, asset: toResponse(newAsset) };
       } catch (err) {
