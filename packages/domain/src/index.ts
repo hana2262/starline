@@ -11,4 +11,6 @@ export type { ConnectorConfigService, ConnectorEnvFallbacks } from "./connector/
 export { ConnectorConfigError } from "./connector/connector-config.service.js";
 export { createAgentService, AgentError } from "./agent/agent.service.js";
 export type { AgentService } from "./agent/agent.service.js";
+export { createAnalyticsService, AnalyticsError } from "./analytics/analytics.service.js";
+export type { AnalyticsService } from "./analytics/analytics.service.js";
 export type { ListAssetsQuery, AssetListResponse } from "@starline/shared";

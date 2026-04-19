@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { Db } from "./db.js";
 import { events } from "./schema.js";
@@ -67,6 +67,15 @@ export function createEventRepository(db: Db) {
       return db.select()
         .from(events)
         .where(eq(events.eventType, eventType))
+        .orderBy(asc(events.createdAt), asc(events.id))
+        .all()
+        .map(toEventRow);
+    },
+
+    listInRange(input: { from: string; to: string }): EventRow[] {
+      return db.select()
+        .from(events)
+        .where(and(gte(events.createdAt, input.from), lte(events.createdAt, input.to)))
         .orderBy(asc(events.createdAt), asc(events.id))
         .all()
         .map(toEventRow);
