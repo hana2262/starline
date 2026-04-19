@@ -4,12 +4,13 @@ import AssetsPage from "./pages/AssetsPage.js";
 import ProjectDetailPage from "./pages/ProjectDetailPage.js";
 import ConnectorsPage from "./pages/ConnectorsPage.js";
 import AgentPage from "./pages/AgentPage.js";
+import AnalyticsPage from "./pages/AnalyticsPage.js";
 import AppNav from "./components/AppNav.js";
 import { useProjects } from "./hooks/useProjects.js";
 import { useProject } from "./hooks/useProject.js";
 import { HEALTH_URL } from "./lib/runtime.js";
 
-type RootView = "projects" | "assets" | "connectors" | "agent" | "project-detail";
+type RootView = "projects" | "assets" | "connectors" | "agent" | "analytics" | "project-detail";
 type BootStatus = "checking" | "ready" | "failed";
 
 export default function App() {
@@ -23,6 +24,8 @@ export default function App() {
   const activeNavView = useMemo(() => {
     if (view === "assets") return "assets";
     if (view === "connectors") return "connectors";
+    if (view === "agent") return "agent";
+    if (view === "analytics") return "analytics";
     return "projects";
   }, [view]);
 
@@ -92,6 +95,10 @@ export default function App() {
 
     if (view === "agent") {
       return <AgentPage apiReady={apiReady} projects={projects.data ?? []} />;
+    }
+
+    if (view === "analytics") {
+      return <AnalyticsPage apiReady={apiReady} />;
     }
 
     if (view === "project-detail") {

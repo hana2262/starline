@@ -14,6 +14,9 @@ import type {
   AgentQueryInput,
   AgentQueryResult,
   AgentSessionResult,
+  AnalyticsOverview,
+  AnalyticsUsage,
+  AnalyticsUsageQuery,
 } from "@starline/shared";
 import { API_BASE } from "./runtime.js";
 
@@ -90,4 +93,17 @@ export const agentApi = {
       body: JSON.stringify(input),
     }),
   getSession: (id: string) => request<AgentSessionResult>(`/agent/sessions/${id}`),
+};
+
+function toAnalyticsUsageQueryString(query: AnalyticsUsageQuery): string {
+  const params = new URLSearchParams();
+  params.set("from", query.from);
+  params.set("to", query.to);
+  return `?${params.toString()}`;
+}
+
+export const analyticsApi = {
+  getOverview: () => request<AnalyticsOverview>("/analytics/overview"),
+  getUsage: (query: AnalyticsUsageQuery) =>
+    request<AnalyticsUsage>(`/analytics/usage${toAnalyticsUsageQueryString(query)}`),
 };

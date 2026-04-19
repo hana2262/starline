@@ -1,4 +1,4 @@
-type View = "projects" | "assets" | "connectors" | "agent";
+type View = "projects" | "assets" | "connectors" | "agent" | "analytics";
 
 interface Props {
   activeView: View;
@@ -26,6 +26,9 @@ export default function AppNav({ activeView, onNavigate }: Props) {
       </button>
       <button className={itemClass("agent")} onClick={() => onNavigate("agent")}>
         Agent
+      </button>
+      <button className={itemClass("analytics")} onClick={() => onNavigate("analytics")}>
+        Analytics
       </button>
     </nav>
   );
