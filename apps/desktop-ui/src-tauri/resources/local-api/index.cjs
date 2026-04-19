@@ -7642,7 +7642,7 @@ var require_logger = __commonJS({
         };
       }
     };
-    function now6() {
+    function now8() {
       const ts = process.hrtime();
       return ts[0] * 1e3 + ts[1] / 1e6;
     }
@@ -7705,7 +7705,7 @@ var require_logger = __commonJS({
       createChildLogger,
       defaultChildLoggerFactory,
       serializers,
-      now: now6
+      now: now8
     };
   }
 });
@@ -8492,7 +8492,7 @@ var require_reply = __commonJS({
     } = require_hooks();
     var internals = require_handleRequest()[Symbol.for("internals")];
     var loggerUtils = require_logger();
-    var now6 = loggerUtils.now;
+    var now8 = loggerUtils.now;
     var { handleError } = require_error_handler();
     var { getSchemaSerializer } = require_schemas();
     var CONTENT_TYPE = {
@@ -8547,7 +8547,7 @@ var require_reply = __commonJS({
           if (this[kReplyStartTime] === void 0) {
             return 0;
           }
-          return (this[kReplyEndTime] || now6()) - this[kReplyStartTime];
+          return (this[kReplyEndTime] || now8()) - this[kReplyStartTime];
         }
       },
       server: {
@@ -9124,9 +9124,9 @@ var require_reply = __commonJS({
       }
     }
     function setupResponseListeners(reply) {
-      reply[kReplyStartTime] = now6();
+      reply[kReplyStartTime] = now8();
       const onResFinished = (err) => {
-        reply[kReplyEndTime] = now6();
+        reply[kReplyEndTime] = now8();
         reply.raw.removeListener("finish", onResFinished);
         reply.raw.removeListener("error", onResFinished);
         const ctx = reply[kRouteContext];
@@ -31809,7 +31809,7 @@ var require_parse_url = __commonJS({
 var require_form_data = __commonJS({
   "node_modules/.pnpm/light-my-request@5.14.0/node_modules/light-my-request/lib/form-data.js"(exports, module2) {
     "use strict";
-    var { randomUUID: randomUUID8 } = require("node:crypto");
+    var { randomUUID: randomUUID10 } = require("node:crypto");
     var { Readable } = require("node:stream");
     var textEncoder;
     function isFormDataLike(payload) {
@@ -31817,7 +31817,7 @@ var require_form_data = __commonJS({
     }
     function formDataToStream(formdata) {
       textEncoder = textEncoder ?? new TextEncoder();
-      const boundary = `----formdata-${randomUUID8()}`;
+      const boundary = `----formdata-${randomUUID10()}`;
       const prefix = `--${boundary}\r
 Content-Disposition: form-data`;
       const escape2 = (str) => str.replace(/\n/g, "%0A").replace(/\r/g, "%0D").replace(/"/g, "%22");
@@ -38602,9 +38602,12 @@ function drizzle(client, config = {}) {
 // packages/storage/src/schema.ts
 var schema_exports = {};
 __export(schema_exports, {
+  agentMessages: () => agentMessages,
+  agentSessions: () => agentSessions,
   assets: () => assets,
   connectorConfigs: () => connectorConfigs,
   connectorSecrets: () => connectorSecrets,
+  events: () => events,
   generations: () => generations,
   projects: () => projects
 });
@@ -38678,6 +38681,37 @@ var connectorSecrets = sqliteTable("connector_secrets", {
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull()
 });
+var agentSessions = sqliteTable("agent_sessions", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id"),
+  title: text("title").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+}, (table) => ({
+  projectUpdatedIdx: index("agent_sessions_project_updated_idx").on(table.projectId, table.updatedAt)
+}));
+var agentMessages = sqliteTable("agent_messages", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull(),
+  role: text("role", { enum: ["user", "assistant"] }).notNull(),
+  content: text("content").notNull(),
+  relatedAssetIds: text("related_asset_ids").notNull().default("[]"),
+  createdAt: text("created_at").notNull()
+}, (table) => ({
+  sessionCreatedIdx: index("agent_messages_session_created_idx").on(table.sessionId, table.createdAt)
+}));
+var events = sqliteTable("events", {
+  id: text("id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id"),
+  projectId: text("project_id"),
+  payload: text("payload").notNull().default("{}"),
+  createdAt: text("created_at").notNull()
+}, (table) => ({
+  eventTypeCreatedIdx: index("events_event_type_created_idx").on(table.eventType, table.createdAt),
+  projectCreatedIdx: index("events_project_created_idx").on(table.projectId, table.createdAt)
+}));
 
 // packages/storage/src/db.ts
 var _db = null;
@@ -39084,6 +39118,120 @@ function createConnectorSecretRepository(db) {
   };
 }
 
+// packages/storage/src/agent.repository.ts
+var import_crypto4 = require("crypto");
+function now6() {
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+function serializeIds(ids) {
+  return JSON.stringify(ids);
+}
+function deserializeIds(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((value) => typeof value === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function toMessageRow(row) {
+  return {
+    ...row,
+    relatedAssetIds: deserializeIds(row.relatedAssetIds)
+  };
+}
+function createAgentRepository(db) {
+  return {
+    createSession(input) {
+      const timestamp = now6();
+      const row = {
+        id: (0, import_crypto4.randomUUID)(),
+        projectId: input.projectId ?? null,
+        title: input.title,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      db.insert(agentSessions).values(row).run();
+      return row;
+    },
+    getSessionById(id) {
+      return db.select().from(agentSessions).where(eq(agentSessions.id, id)).get();
+    },
+    touchSession(id) {
+      db.update(agentSessions).set({ updatedAt: now6() }).where(eq(agentSessions.id, id)).run();
+      return this.getSessionById(id);
+    },
+    createMessage(input) {
+      const row = {
+        id: (0, import_crypto4.randomUUID)(),
+        sessionId: input.sessionId,
+        role: input.role,
+        content: input.content,
+        relatedAssetIds: serializeIds(input.relatedAssetIds ?? []),
+        createdAt: now6()
+      };
+      db.insert(agentMessages).values(row).run();
+      db.update(agentSessions).set({ updatedAt: row.createdAt }).where(eq(agentSessions.id, input.sessionId)).run();
+      return toMessageRow(row);
+    },
+    listMessagesBySession(sessionId) {
+      return db.select().from(agentMessages).where(eq(agentMessages.sessionId, sessionId)).orderBy(asc(agentMessages.createdAt), asc(agentMessages.id)).all().map(toMessageRow);
+    },
+    listMessagesBySessionAndRole(sessionId, role) {
+      return db.select().from(agentMessages).where(and(eq(agentMessages.sessionId, sessionId), eq(agentMessages.role, role))).orderBy(asc(agentMessages.createdAt), asc(agentMessages.id)).all().map(toMessageRow);
+    }
+  };
+}
+
+// packages/storage/src/event.repository.ts
+var import_crypto5 = require("crypto");
+function now7() {
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+function serializePayload(payload) {
+  return JSON.stringify(payload ?? {});
+}
+function deserializePayload(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+function toEventRow(row) {
+  return {
+    ...row,
+    payload: deserializePayload(row.payload)
+  };
+}
+function createEventRepository(db) {
+  return {
+    create(input) {
+      const row = {
+        id: (0, import_crypto5.randomUUID)(),
+        eventType: input.eventType,
+        entityType: input.entityType,
+        entityId: input.entityId ?? null,
+        projectId: input.projectId ?? null,
+        payload: serializePayload(input.payload),
+        createdAt: now7()
+      };
+      db.insert(events).values(row).run();
+      return toEventRow(row);
+    },
+    list() {
+      return db.select().from(events).orderBy(asc(events.createdAt), asc(events.id)).all().map(toEventRow);
+    },
+    listByType(eventType) {
+      return db.select().from(events).where(eq(events.eventType, eventType)).orderBy(asc(events.createdAt), asc(events.id)).all().map(toEventRow);
+    },
+    listInRange(input) {
+      return db.select().from(events).where(and(gte(events.createdAt, input.from), lte(events.createdAt, input.to))).orderBy(asc(events.createdAt), asc(events.id)).all().map(toEventRow);
+    }
+  };
+}
+
 // packages/domain/src/project/project.service.ts
 function toResponse(row) {
   return {
@@ -39095,10 +39243,19 @@ function toResponse(row) {
     updatedAt: row.updatedAt
   };
 }
-function createProjectService(repo) {
+function createProjectService(repo, eventRepo) {
   return {
     create(input) {
       const row = repo.create(input);
+      eventRepo?.create({
+        eventType: "project.created",
+        entityType: "project",
+        entityId: row.id,
+        projectId: row.id,
+        payload: {
+          status: row.status
+        }
+      });
       return toResponse(row);
     },
     list() {
@@ -39153,7 +39310,7 @@ function toResponse2(row) {
 function isSqliteUniqueError(err) {
   return err instanceof Error && (err.message.includes("UNIQUE constraint failed") || err.code === "SQLITE_CONSTRAINT_UNIQUE");
 }
-function createAssetService(repo, computeHash) {
+function createAssetService(repo, computeHash, eventRepo) {
   return {
     async import(input) {
       try {
@@ -39196,6 +39353,18 @@ function createAssetService(repo, computeHash) {
           tags: input.tags ?? [],
           description: input.description ?? null
         });
+        eventRepo?.create({
+          eventType: "asset.imported",
+          entityType: "asset",
+          entityId: newAsset.id,
+          projectId: newAsset.projectId,
+          payload: {
+            type: newAsset.type,
+            fileSize: newAsset.fileSize,
+            mimeType: newAsset.mimeType,
+            source: "manual_import"
+          }
+        });
         return { created: true, asset: toResponse2(newAsset) };
       } catch (err) {
         if (isSqliteUniqueError(err)) {
@@ -39231,7 +39400,7 @@ function createAssetService(repo, computeHash) {
 }
 
 // packages/domain/src/asset/file.utils.ts
-var import_crypto4 = require("crypto");
+var import_crypto6 = require("crypto");
 var import_fs2 = require("fs");
 var import_path2 = require("path");
 var MIME_MAP = {
@@ -39254,7 +39423,7 @@ async function computeFileHash(filePath) {
   const ext = (0, import_path2.extname)(filePath).toLowerCase();
   const mimeType = MIME_MAP[ext] ?? "application/octet-stream";
   const hash = await new Promise((resolve, reject) => {
-    const hasher = (0, import_crypto4.createHash)("sha256");
+    const hasher = (0, import_crypto6.createHash)("sha256");
     const stream = (0, import_fs2.createReadStream)(filePath);
     stream.on("data", (chunk) => hasher.update(chunk));
     stream.on("end", () => resolve(hasher.digest("hex")));
@@ -39266,7 +39435,7 @@ async function computeFileHash(filePath) {
 // packages/domain/src/generation/generation.service.ts
 var import_fs3 = require("fs");
 var import_path3 = __toESM(require("path"), 1);
-var import_crypto5 = require("crypto");
+var import_crypto7 = require("crypto");
 
 // packages/domain/src/generation/generation.queue.ts
 var GenerationQueue = class {
@@ -39414,6 +39583,7 @@ function createGenerationService(registry, assetRepo, genRepo, computeHash, appD
   const maxRetryDelayMs = opts?.maxRetryDelayMs ?? 3e4;
   const concurrency = opts?.concurrency ?? 1;
   const logger = opts?.logger;
+  const eventRepo = opts?.eventRepo;
   const metrics = {
     submitted: 0,
     succeeded: 0,
@@ -39488,6 +39658,17 @@ function createGenerationService(registry, assetRepo, genRepo, computeHash, appD
     metrics.cancelled++;
     const durationMs = recordDuration(cancelledRow);
     logMetrics("cancelled", cancelledRow, { durationMs });
+    eventRepo?.create({
+      eventType: "generation.cancelled",
+      entityType: "generation",
+      entityId: cancelledRow.id,
+      projectId: cancelledRow.projectId,
+      payload: {
+        connectorId: cancelledRow.connectorId,
+        type: cancelledRow.type,
+        cancelReason: cancelledRow.cancelReason
+      }
+    });
   }
   function getCurrentJobOrCancel(jobId) {
     const row = genRepo.getById(jobId);
@@ -39527,6 +39708,18 @@ function createGenerationService(registry, assetRepo, genRepo, computeHash, appD
     metrics.failureCodeCounts[code] = (metrics.failureCodeCounts[code] ?? 0) + 1;
     const durationMs = recordDuration(failedRow);
     logMetrics("failed", failedRow, { durationMs, errorCode: code, retryable });
+    eventRepo?.create({
+      eventType: "generation.failed",
+      entityType: "generation",
+      entityId: failedRow.id,
+      projectId: failedRow.projectId,
+      payload: {
+        connectorId: failedRow.connectorId,
+        type: failedRow.type,
+        errorCode: code,
+        retryable
+      }
+    });
   }
   async function executeJob(jobId) {
     const row = genRepo.getById(jobId);
@@ -39585,7 +39778,7 @@ function createGenerationService(registry, assetRepo, genRepo, computeHash, appD
       handleFailure(jobId, "HASH_FAILED", err);
       return;
     }
-    const assetId = (0, import_crypto5.randomUUID)();
+    const assetId = (0, import_crypto7.randomUUID)();
     const ext = extFor(output.mimeType ?? mimeType);
     const managedPath = import_path3.default.join(appDataDir, `${assetId}.${ext}`);
     (0, import_fs3.mkdirSync)(appDataDir, { recursive: true });
@@ -39636,6 +39829,17 @@ function createGenerationService(registry, assetRepo, genRepo, computeHash, appD
       metrics.succeeded++;
       const durationMs = recordDuration(succeededRow);
       logMetrics("succeeded", succeededRow, { durationMs, assetId: assetRow.id });
+      eventRepo?.create({
+        eventType: "generation.completed",
+        entityType: "generation",
+        entityId: succeededRow.id,
+        projectId: succeededRow.projectId,
+        payload: {
+          connectorId: succeededRow.connectorId,
+          type: succeededRow.type,
+          assetId: assetRow.id
+        }
+      });
     }
     tryUnlink(output.filePath);
   }
@@ -39667,6 +39871,16 @@ function createGenerationService(registry, assetRepo, genRepo, computeHash, appD
       metrics.submitted++;
       queue.push(job.id);
       logMetrics("submitted", job);
+      eventRepo?.create({
+        eventType: "generation.submitted",
+        entityType: "generation",
+        entityId: job.id,
+        projectId: job.projectId,
+        payload: {
+          connectorId: job.connectorId,
+          type: job.type
+        }
+      });
       return { job: toJobResponse(job) };
     },
     getJob(jobId) {
@@ -43989,6 +44203,90 @@ var ConnectorConfigUpsertResultSchema = external_exports.object({
   item: ConnectorConfigViewSchema
 });
 
+// packages/shared/src/agent.schema.ts
+var AgentRoleSchema = external_exports.enum(["user", "assistant"]);
+var AgentQuerySchema = external_exports.object({
+  sessionId: external_exports.string().min(1).optional(),
+  projectId: external_exports.string().min(1).optional(),
+  query: external_exports.string().min(1).max(4e3)
+});
+var AgentAssetReferenceSchema = external_exports.object({
+  id: external_exports.string(),
+  name: external_exports.string(),
+  type: external_exports.enum(["image", "video", "audio", "prompt", "other"]),
+  projectId: external_exports.string().nullable(),
+  reason: external_exports.string(),
+  sourceConnector: external_exports.string().nullable(),
+  createdAt: external_exports.string()
+});
+var AgentMessageSchema = external_exports.object({
+  id: external_exports.string(),
+  sessionId: external_exports.string(),
+  role: AgentRoleSchema,
+  content: external_exports.string(),
+  relatedAssetIds: external_exports.array(external_exports.string()),
+  createdAt: external_exports.string()
+});
+var AgentSessionSchema = external_exports.object({
+  id: external_exports.string(),
+  projectId: external_exports.string().nullable(),
+  title: external_exports.string(),
+  createdAt: external_exports.string(),
+  updatedAt: external_exports.string()
+});
+var AgentQueryResultSchema = external_exports.object({
+  session: AgentSessionSchema,
+  userMessage: AgentMessageSchema,
+  assistantMessage: AgentMessageSchema,
+  relatedAssets: external_exports.array(AgentAssetReferenceSchema),
+  project: ProjectResponseSchema.nullable()
+});
+var AgentSessionResultSchema = external_exports.object({
+  session: AgentSessionSchema,
+  messages: external_exports.array(AgentMessageSchema),
+  relatedAssets: external_exports.array(AgentAssetReferenceSchema),
+  project: ProjectResponseSchema.nullable()
+});
+
+// packages/shared/src/analytics.schema.ts
+var AnalyticsOverviewSchema = external_exports.object({
+  totals: external_exports.object({
+    projectsCreated: external_exports.number().int().nonnegative(),
+    assetsImported: external_exports.number().int().nonnegative(),
+    agentQueries: external_exports.number().int().nonnegative(),
+    generationSubmitted: external_exports.number().int().nonnegative(),
+    generationCompleted: external_exports.number().int().nonnegative(),
+    generationFailed: external_exports.number().int().nonnegative(),
+    generationCancelled: external_exports.number().int().nonnegative()
+  }),
+  generationByConnector: external_exports.record(external_exports.object({
+    submitted: external_exports.number().int().nonnegative(),
+    completed: external_exports.number().int().nonnegative(),
+    failed: external_exports.number().int().nonnegative(),
+    cancelled: external_exports.number().int().nonnegative()
+  })),
+  latestEventAt: external_exports.string().nullable()
+});
+var AnalyticsUsageQuerySchema = external_exports.object({
+  from: external_exports.string().datetime(),
+  to: external_exports.string().datetime()
+});
+var AnalyticsUsagePointSchema = external_exports.object({
+  date: external_exports.string(),
+  projectsCreated: external_exports.number().int().nonnegative(),
+  assetsImported: external_exports.number().int().nonnegative(),
+  agentQueries: external_exports.number().int().nonnegative(),
+  generationSubmitted: external_exports.number().int().nonnegative(),
+  generationCompleted: external_exports.number().int().nonnegative(),
+  generationFailed: external_exports.number().int().nonnegative(),
+  generationCancelled: external_exports.number().int().nonnegative()
+});
+var AnalyticsUsageSchema = external_exports.object({
+  from: external_exports.string().datetime(),
+  to: external_exports.string().datetime(),
+  points: external_exports.array(AnalyticsUsagePointSchema)
+});
+
 // packages/domain/src/connector/connector-config.service.ts
 var ConnectorConfigError = class extends Error {
   constructor(message, code, connectorId) {
@@ -44045,9 +44343,9 @@ function createConnectorConfigService(repo, secretRepo, env) {
           continue;
         }
       }
-      const now6 = (/* @__PURE__ */ new Date()).toISOString();
+      const now8 = (/* @__PURE__ */ new Date()).toISOString();
       if (!items.has("minimax") && env.minimaxApiKey) {
-        items.set("minimax", buildMinimaxView(true, "env", true, now6, now6));
+        items.set("minimax", buildMinimaxView(true, "env", true, now8, now8));
       }
       if (!items.has("stable-diffusion") && env.stableDiffusionBaseUrl) {
         items.set(
@@ -44057,8 +44355,8 @@ function createConnectorConfigService(repo, secretRepo, env) {
             "env",
             { baseUrl: env.stableDiffusionBaseUrl },
             false,
-            now6,
-            now6
+            now8,
+            now8
           )
         );
       }
@@ -44099,11 +44397,363 @@ function createConnectorConfigService(repo, secretRepo, env) {
   };
 }
 
+// packages/domain/src/agent/agent.service.ts
+var AgentError = class extends Error {
+  constructor(message, code, details) {
+    super(message);
+    this.code = code;
+    this.details = details;
+    this.name = "AgentError";
+  }
+};
+function toProjectResponse(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    status: row.status,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  };
+}
+function toMessage(row) {
+  return {
+    id: row.id,
+    sessionId: row.sessionId,
+    role: row.role,
+    content: row.content,
+    relatedAssetIds: row.relatedAssetIds,
+    createdAt: row.createdAt
+  };
+}
+function buildSessionTitle(query) {
+  const normalized = query.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 60)
+    return normalized;
+  return `${normalized.slice(0, 57)}...`;
+}
+function buildAssetReason(query, asset, fallbackUsed) {
+  if (fallbackUsed) {
+    return `No direct search match; using recent ${asset.type} context from the local library.`;
+  }
+  const normalizedQuery = query.toLowerCase();
+  const matchingTags = asset.tags.filter((tag) => normalizedQuery.includes(tag.toLowerCase()));
+  if (matchingTags.length > 0) {
+    return `Matched query terms through tags: ${matchingTags.slice(0, 3).join(", ")}`;
+  }
+  return `Relevant ${asset.type} asset matched by local search: ${asset.name}`;
+}
+function formatAssetLine(asset) {
+  return `- ${asset.name} (${asset.type})${asset.reason ? `: ${asset.reason}` : ""}`;
+}
+function buildAssistantResponse(input) {
+  const scopeLine = input.projectName ? `Project context: ${input.projectName}${input.projectDescription ? ` - ${input.projectDescription}` : ""}.` : "Project context: using the full local asset library.";
+  const iterationLine = input.previousAssistantReplyCount > 0 ? "This session already has prior agent replies, so the guidance below builds on existing context." : "This is the first reply in the session, so the guidance below is based on the current query and local retrieval only.";
+  if (input.relatedAssets.length === 0) {
+    return [
+      `Query: ${input.query}`,
+      scopeLine,
+      iterationLine,
+      "No directly related local assets were found.",
+      "Suggested next steps:",
+      "- Narrow the query with a subject, style, or platform keyword.",
+      "- Import a representative prompt/image/audio sample into the project if you want retrieval-backed suggestions.",
+      "- If this request is project-specific, resend it with the relevant project selected."
+    ].join("\n");
+  }
+  const assetLines = input.relatedAssets.map(formatAssetLine);
+  return [
+    `Query: ${input.query}`,
+    scopeLine,
+    iterationLine,
+    `Found ${input.relatedAssets.length} related local asset(s) that can anchor the next step:`,
+    ...assetLines,
+    "Suggested next steps:",
+    "- Reuse the closest matching asset as the style or structure reference.",
+    "- Keep the same project scope while iterating so future retrieval stays coherent.",
+    "- If you want more specific guidance, ask for a prompt rewrite, asset shortlist, or connector-specific execution plan."
+  ].join("\n");
+}
+function createAgentService(agentRepo, projectRepo, assetRepo, eventRepo) {
+  return {
+    query(input) {
+      const existingSession = input.sessionId ? agentRepo.getSessionById(input.sessionId) : void 0;
+      if (input.sessionId && !existingSession) {
+        throw new AgentError("Agent session not found", "SESSION_NOT_FOUND", { sessionId: input.sessionId });
+      }
+      const effectiveProjectId = existingSession?.projectId ?? input.projectId ?? null;
+      if (existingSession?.projectId && input.projectId && existingSession.projectId !== input.projectId) {
+        throw new AgentError("Session project does not match requested project", "SESSION_PROJECT_MISMATCH", {
+          sessionId: existingSession.id,
+          projectId: input.projectId
+        });
+      }
+      const projectRow = effectiveProjectId ? projectRepo.getById(effectiveProjectId) : void 0;
+      if (effectiveProjectId && !projectRow) {
+        throw new AgentError("Project not found", "PROJECT_NOT_FOUND", { projectId: effectiveProjectId });
+      }
+      const session = existingSession ?? agentRepo.createSession({
+        projectId: effectiveProjectId,
+        title: buildSessionTitle(input.query)
+      });
+      const previousAssistantReplyCount = agentRepo.listMessagesBySessionAndRole(session.id, "assistant").length;
+      let matchedAssets = assetRepo.list({
+        query: input.query,
+        projectId: effectiveProjectId ?? void 0,
+        type: void 0,
+        limit: 5,
+        offset: 0
+      }).items;
+      let fallbackUsed = false;
+      if (matchedAssets.length === 0) {
+        matchedAssets = assetRepo.list({
+          query: void 0,
+          projectId: effectiveProjectId ?? void 0,
+          type: void 0,
+          limit: 5,
+          offset: 0
+        }).items;
+        fallbackUsed = matchedAssets.length > 0;
+      }
+      const relatedAssets = matchedAssets.map((asset) => ({
+        id: asset.id,
+        name: asset.name,
+        type: asset.type,
+        projectId: asset.projectId,
+        reason: buildAssetReason(input.query, asset, fallbackUsed),
+        sourceConnector: asset.sourceConnector ?? null,
+        createdAt: asset.createdAt
+      }));
+      const userMessageRow = agentRepo.createMessage({
+        sessionId: session.id,
+        role: "user",
+        content: input.query.trim()
+      });
+      const assistantContent = buildAssistantResponse({
+        query: input.query.trim(),
+        projectName: projectRow?.name ?? null,
+        projectDescription: projectRow?.description ?? null,
+        relatedAssets,
+        previousAssistantReplyCount
+      });
+      const assistantMessageRow = agentRepo.createMessage({
+        sessionId: session.id,
+        role: "assistant",
+        content: assistantContent,
+        relatedAssetIds: relatedAssets.map((asset) => asset.id)
+      });
+      eventRepo?.create({
+        eventType: "agent.queried",
+        entityType: "agent_session",
+        entityId: session.id,
+        projectId: effectiveProjectId,
+        payload: {
+          relatedAssetCount: relatedAssets.length,
+          queryLength: input.query.trim().length
+        }
+      });
+      const refreshedSession = agentRepo.getSessionById(session.id);
+      if (!refreshedSession) {
+        throw new AgentError("Agent session not found after write", "SESSION_NOT_FOUND", { sessionId: session.id });
+      }
+      return {
+        session: refreshedSession,
+        userMessage: toMessage(userMessageRow),
+        assistantMessage: toMessage(assistantMessageRow),
+        relatedAssets,
+        project: projectRow ? toProjectResponse(projectRow) : null
+      };
+    },
+    getSession(sessionId) {
+      const session = agentRepo.getSessionById(sessionId);
+      if (!session)
+        return null;
+      const messages = agentRepo.listMessagesBySession(sessionId).map(toMessage);
+      const relatedAssetIds = Array.from(new Set(messages.flatMap((message) => message.relatedAssetIds)));
+      const relatedAssets = relatedAssetIds.map((assetId) => assetRepo.getById(assetId)).filter((asset) => Boolean(asset)).map((asset) => ({
+        id: asset.id,
+        name: asset.name,
+        type: asset.type,
+        projectId: asset.projectId,
+        reason: "Referenced by a prior assistant reply in this session.",
+        sourceConnector: asset.sourceConnector ?? null,
+        createdAt: asset.createdAt
+      }));
+      const projectRow = session.projectId ? projectRepo.getById(session.projectId) : void 0;
+      return {
+        session,
+        messages,
+        relatedAssets,
+        project: projectRow ? toProjectResponse(projectRow) : null
+      };
+    }
+  };
+}
+
+// packages/domain/src/analytics/analytics.service.ts
+var AnalyticsError = class extends Error {
+  constructor(message, code) {
+    super(message);
+    this.code = code;
+    this.name = "AnalyticsError";
+  }
+};
+function emptyConnectorAggregate() {
+  return {
+    submitted: 0,
+    completed: 0,
+    failed: 0,
+    cancelled: 0
+  };
+}
+function emptyUsagePoint(date) {
+  return {
+    date,
+    projectsCreated: 0,
+    assetsImported: 0,
+    agentQueries: 0,
+    generationSubmitted: 0,
+    generationCompleted: 0,
+    generationFailed: 0,
+    generationCancelled: 0
+  };
+}
+function toDayKey(iso) {
+  return iso.slice(0, 10);
+}
+function listDayKeys(from, to) {
+  const keys = [];
+  const cursor = /* @__PURE__ */ new Date(`${toDayKey(from)}T00:00:00.000Z`);
+  const end = /* @__PURE__ */ new Date(`${toDayKey(to)}T00:00:00.000Z`);
+  while (cursor <= end) {
+    keys.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return keys;
+}
+function ensureValidRange(query) {
+  if (new Date(query.from).getTime() > new Date(query.to).getTime()) {
+    throw new AnalyticsError("Analytics usage range is invalid.", "INVALID_RANGE");
+  }
+}
+function connectorIdFromPayload(payload) {
+  return typeof payload["connectorId"] === "string" ? payload["connectorId"] : null;
+}
+function createAnalyticsService(eventRepo) {
+  return {
+    getOverview() {
+      const events2 = eventRepo.list();
+      const generationByConnector = {};
+      const overview = {
+        totals: {
+          projectsCreated: 0,
+          assetsImported: 0,
+          agentQueries: 0,
+          generationSubmitted: 0,
+          generationCompleted: 0,
+          generationFailed: 0,
+          generationCancelled: 0
+        },
+        generationByConnector,
+        latestEventAt: events2.at(-1)?.createdAt ?? null
+      };
+      for (const event of events2) {
+        switch (event.eventType) {
+          case "project.created":
+            overview.totals.projectsCreated++;
+            break;
+          case "asset.imported":
+            overview.totals.assetsImported++;
+            break;
+          case "agent.queried":
+            overview.totals.agentQueries++;
+            break;
+          case "generation.submitted":
+          case "generation.completed":
+          case "generation.failed":
+          case "generation.cancelled": {
+            const connectorId = connectorIdFromPayload(event.payload);
+            if (connectorId) {
+              generationByConnector[connectorId] ??= emptyConnectorAggregate();
+            }
+            if (event.eventType === "generation.submitted") {
+              overview.totals.generationSubmitted++;
+              if (connectorId)
+                generationByConnector[connectorId].submitted++;
+            }
+            if (event.eventType === "generation.completed") {
+              overview.totals.generationCompleted++;
+              if (connectorId)
+                generationByConnector[connectorId].completed++;
+            }
+            if (event.eventType === "generation.failed") {
+              overview.totals.generationFailed++;
+              if (connectorId)
+                generationByConnector[connectorId].failed++;
+            }
+            if (event.eventType === "generation.cancelled") {
+              overview.totals.generationCancelled++;
+              if (connectorId)
+                generationByConnector[connectorId].cancelled++;
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      }
+      return overview;
+    },
+    getUsage(query) {
+      ensureValidRange(query);
+      const dayKeys = listDayKeys(query.from, query.to);
+      const pointsMap = new Map(
+        dayKeys.map((day) => [day, emptyUsagePoint(day)])
+      );
+      for (const event of eventRepo.listInRange(query)) {
+        const point = pointsMap.get(toDayKey(event.createdAt));
+        if (!point)
+          continue;
+        switch (event.eventType) {
+          case "project.created":
+            point.projectsCreated++;
+            break;
+          case "asset.imported":
+            point.assetsImported++;
+            break;
+          case "agent.queried":
+            point.agentQueries++;
+            break;
+          case "generation.submitted":
+            point.generationSubmitted++;
+            break;
+          case "generation.completed":
+            point.generationCompleted++;
+            break;
+          case "generation.failed":
+            point.generationFailed++;
+            break;
+          case "generation.cancelled":
+            point.generationCancelled++;
+            break;
+          default:
+            break;
+        }
+      }
+      return {
+        from: query.from,
+        to: query.to,
+        points: dayKeys.map((day) => pointsMap.get(day) ?? emptyUsagePoint(day))
+      };
+    }
+  };
+}
+
 // packages/connectors/src/mock.connector.ts
 var import_fs4 = __toESM(require("fs"), 1);
 var import_path4 = __toESM(require("path"), 1);
 var import_os = __toESM(require("os"), 1);
-var import_crypto6 = require("crypto");
+var import_crypto8 = require("crypto");
 var MockConnector = class {
   id = "mock";
   name = "Mock Connector";
@@ -44114,7 +44764,7 @@ var MockConnector = class {
   }
   async generate(input) {
     const t = Date.now();
-    const seed = (0, import_crypto6.randomUUID)();
+    const seed = (0, import_crypto8.randomUUID)();
     const filePath = import_path4.default.join(import_os.default.tmpdir(), `starline-mock-${seed}.txt`);
     const content = `mock:${input.prompt}|seed:${seed}|type:${input.type}`;
     import_fs4.default.writeFileSync(filePath, content, "utf8");
@@ -44131,7 +44781,7 @@ var MockConnector = class {
 var import_fs5 = require("fs");
 var import_path5 = __toESM(require("path"), 1);
 var import_os2 = __toESM(require("os"), 1);
-var import_crypto7 = require("crypto");
+var import_crypto9 = require("crypto");
 var API_BASE = "https://api.minimax.io/v1";
 var MODELS_URL = `${API_BASE}/models`;
 var GENERATE_URL = `${API_BASE}/image_generation`;
@@ -44174,7 +44824,7 @@ var MinimaxConnector = class {
   }
   async generate(input) {
     const start = Date.now();
-    const seed = (0, import_crypto7.randomUUID)();
+    const seed = (0, import_crypto9.randomUUID)();
     const genRes = await this.fetchFn(GENERATE_URL, {
       method: "POST",
       headers: {
@@ -44208,7 +44858,7 @@ var MinimaxConnector = class {
     }
     const buffer = Buffer.from(await imgRes.arrayBuffer());
     const ext = extFor2(mimeType);
-    const filePath = import_path5.default.join(import_os2.default.tmpdir(), `minimax-${(0, import_crypto7.randomUUID)()}.${ext}`);
+    const filePath = import_path5.default.join(import_os2.default.tmpdir(), `minimax-${(0, import_crypto9.randomUUID)()}.${ext}`);
     (0, import_fs5.writeFileSync)(filePath, buffer);
     return {
       filePath,
@@ -44223,7 +44873,7 @@ var MinimaxConnector = class {
 var import_fs6 = require("fs");
 var import_os3 = __toESM(require("os"), 1);
 var import_path6 = __toESM(require("path"), 1);
-var import_crypto8 = require("crypto");
+var import_crypto10 = require("crypto");
 function normalizeBaseUrl(baseUrl) {
   return baseUrl.replace(/\/+$/, "");
 }
@@ -44301,7 +44951,7 @@ var StableDiffusionConnector = class {
       throw new Error("Stable Diffusion returned no images");
     }
     const buffer = Buffer.from(base64Image, "base64");
-    const filePath = import_path6.default.join(import_os3.default.tmpdir(), `stable-diffusion-${(0, import_crypto8.randomUUID)()}.png`);
+    const filePath = import_path6.default.join(import_os3.default.tmpdir(), `stable-diffusion-${(0, import_crypto10.randomUUID)()}.png`);
     (0, import_fs6.writeFileSync)(filePath, buffer);
     const info = parseInfo(json.info);
     return {
@@ -44310,7 +44960,7 @@ var StableDiffusionConnector = class {
       name: input.prompt.slice(0, 80).trim() || "stable-diffusion-output",
       meta: {
         model: info.model ?? "automatic1111-webui",
-        seed: info.seed ?? (0, import_crypto8.randomUUID)(),
+        seed: info.seed ?? (0, import_crypto10.randomUUID)(),
         latencyMs: Date.now() - start
       }
     };
@@ -44515,6 +45165,34 @@ function registerConnectorRoutes(app2, connectorConfigService) {
   });
 }
 
+// apps/local-api/dist/routes/agent.js
+function registerAgentRoutes(app2, agentService) {
+  app2.post("/api/agent/query", async (req, reply) => {
+    const input = AgentQuerySchema.parse(req.body);
+    const result = agentService.query(input);
+    return reply.code(200).send(result);
+  });
+  app2.get("/api/agent/sessions/:id", async (req, reply) => {
+    const result = agentService.getSession(req.params.id);
+    if (!result)
+      return reply.code(404).send({ error: "Not found" });
+    return reply.send(result);
+  });
+}
+
+// apps/local-api/dist/routes/analytics.js
+function registerAnalyticsRoutes(app2, analyticsService) {
+  app2.get("/api/analytics/overview", async (_req, reply) => {
+    const result = analyticsService.getOverview();
+    return reply.send(result);
+  });
+  app2.get("/api/analytics/usage", async (req, reply) => {
+    const query = AnalyticsUsageQuerySchema.parse(req.query);
+    const result = analyticsService.getUsage(query);
+    return reply.send(result);
+  });
+}
+
 // apps/local-api/dist/connectors.runtime.js
 function buildConfiguredConnectors(repo, secretRepo, env, logger) {
   const configured = /* @__PURE__ */ new Map();
@@ -44562,6 +45240,11 @@ function buildConfiguredConnectors(repo, secretRepo, env, logger) {
 }
 
 // apps/local-api/dist/server.js
+function setCorsHeaders(reply) {
+  reply.header("Access-Control-Allow-Origin", "*");
+  reply.header("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
+  reply.header("Access-Control-Allow-Headers", "Content-Type");
+}
 function resolveGenerationConcurrency(envValue, logger, override) {
   if (override !== void 0)
     return override;
@@ -44580,16 +45263,25 @@ function resolveGenerationConcurrency(envValue, logger, override) {
 }
 function buildServer(dbPath, options) {
   const app2 = (0, import_fastify.default)({ logger: true });
+  app2.addHook("onRequest", async (_req, reply) => {
+    setCorsHeaders(reply);
+  });
+  app2.options("/*", async (_req, reply) => {
+    setCorsHeaders(reply);
+    return reply.code(204).send();
+  });
   runMigrations(dbPath);
   const db = getDb(dbPath);
   const sqlite = getSqlite();
   const projectRepo = createProjectRepository(db);
-  const projectService = createProjectService(projectRepo);
+  const eventRepo = createEventRepository(db);
+  const projectService = createProjectService(projectRepo, eventRepo);
   const assetRepo = createAssetRepository(db, sqlite);
-  const assetService = createAssetService(assetRepo, computeFileHash);
+  const assetService = createAssetService(assetRepo, computeFileHash, eventRepo);
   const generationRepo = createGenerationRepository(db);
   const connectorConfigRepo = createConnectorConfigRepository(db);
   const connectorSecretRepo = createConnectorSecretRepository(db);
+  const agentRepo = createAgentRepository(db);
   const connectorConfigService = createConnectorConfigService(connectorConfigRepo, connectorSecretRepo, {
     minimaxApiKey: process.env["MINIMAX_API_KEY"],
     stableDiffusionBaseUrl: process.env["STABLE_DIFFUSION_BASE_URL"]
@@ -44608,7 +45300,9 @@ function buildServer(dbPath, options) {
     event: "generation.concurrency.configured",
     generationConcurrency
   }, "generation concurrency configured");
-  const generationService = createGenerationService(connectorRegistry, assetRepo, generationRepo, computeFileHash, appDataDir, { retryBaseMs: options?.retryBaseMs, concurrency: generationConcurrency, logger: app2.log });
+  const generationService = createGenerationService(connectorRegistry, assetRepo, generationRepo, computeFileHash, appDataDir, { retryBaseMs: options?.retryBaseMs, concurrency: generationConcurrency, logger: app2.log, eventRepo });
+  const agentService = createAgentService(agentRepo, projectRepo, assetRepo, eventRepo);
+  const analyticsService = createAnalyticsService(eventRepo);
   generationService.recoverPendingJobs();
   app2.addHook("onClose", async () => {
     generationService.queue.destroy();
@@ -44618,6 +45312,8 @@ function buildServer(dbPath, options) {
   registerAssetRoutes(app2, assetService);
   registerConnectorRoutes(app2, connectorConfigService);
   registerGenerationRoutes(app2, generationService);
+  registerAgentRoutes(app2, agentService);
+  registerAnalyticsRoutes(app2, analyticsService);
   app2.setErrorHandler((err, _req, reply) => {
     if (err instanceof ConnectorError) {
       const status = err.code === "CONNECTOR_NOT_FOUND" ? 404 : 502;
@@ -44632,6 +45328,20 @@ function buildServer(dbPath, options) {
         error: err.message,
         code: err.code,
         connectorId: err.connectorId
+      });
+    }
+    if (err instanceof AgentError) {
+      const status = err.code === "SESSION_NOT_FOUND" || err.code === "PROJECT_NOT_FOUND" ? 404 : 409;
+      return reply.code(status).send({
+        error: err.message,
+        code: err.code,
+        ...err.details
+      });
+    }
+    if (err instanceof AnalyticsError) {
+      return reply.code(400).send({
+        error: err.message,
+        code: err.code
       });
     }
     if (err instanceof GenerationRetryError) {

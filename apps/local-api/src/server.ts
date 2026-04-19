@@ -14,6 +14,12 @@ import { registerAgentRoutes } from "./routes/agent.js";
 import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { buildConfiguredConnectors } from "./connectors.runtime.js";
 
+function setCorsHeaders(reply: { header: (name: string, value: string) => unknown }): void {
+  reply.header("Access-Control-Allow-Origin", "*");
+  reply.header("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
+  reply.header("Access-Control-Allow-Headers", "Content-Type");
+}
+
 function resolveGenerationConcurrency(
   envValue: string | undefined,
   logger: FastifyBaseLogger,
@@ -40,6 +46,15 @@ export function buildServer(
   options?: { extraConnectors?: Map<string, Connector>; retryBaseMs?: number; generationConcurrency?: number },
 ) {
   const app = Fastify({ logger: true });
+
+  app.addHook("onRequest", async (_req, reply) => {
+    setCorsHeaders(reply);
+  });
+
+  app.options("/*", async (_req, reply) => {
+    setCorsHeaders(reply);
+    return reply.code(204).send();
+  });
 
   // Run migrations and wire dependencies
   runMigrations(dbPath);
