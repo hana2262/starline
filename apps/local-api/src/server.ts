@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import type { FastifyBaseLogger } from "fastify";
 import path from "path";
 import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository, createConnectorConfigRepository, createConnectorSecretRepository, createAgentRepository, createEventRepository } from "@starline/storage";
-import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError, createAgentService, AgentError } from "@starline/domain";
+import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError, createAgentService, AgentError, createAnalyticsService, AnalyticsError } from "@starline/domain";
 import { MockConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
 import { runMigrations } from "@starline/storage/src/migrate.js";
@@ -11,6 +11,7 @@ import { registerAssetRoutes } from "./routes/assets.js";
 import { registerGenerationRoutes } from "./routes/generation.js";
 import { registerConnectorRoutes } from "./routes/connectors.js";
 import { registerAgentRoutes } from "./routes/agent.js";
+import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { buildConfiguredConnectors } from "./connectors.runtime.js";
 
 function resolveGenerationConcurrency(
@@ -94,6 +95,7 @@ export function buildServer(
     { retryBaseMs: options?.retryBaseMs, concurrency: generationConcurrency, logger: app.log, eventRepo },
   );
   const agentService = createAgentService(agentRepo, projectRepo, assetRepo, eventRepo);
+  const analyticsService = createAnalyticsService(eventRepo);
 
   generationService.recoverPendingJobs();
 
@@ -111,6 +113,7 @@ export function buildServer(
   registerConnectorRoutes(app, connectorConfigService);
   registerGenerationRoutes(app, generationService);
   registerAgentRoutes(app, agentService);
+  registerAnalyticsRoutes(app, analyticsService);
 
   // Error handler: ConnectorError → 404/502; AssetImportError → 409/422; ZodError → 400; else → 500
   app.setErrorHandler((err, _req, reply) => {
@@ -135,6 +138,12 @@ export function buildServer(
         error: err.message,
         code: err.code,
         ...err.details,
+      });
+    }
+    if (err instanceof AnalyticsError) {
+      return reply.code(400).send({
+        error: err.message,
+        code: err.code,
       });
     }
     if (err instanceof GenerationRetryError) {

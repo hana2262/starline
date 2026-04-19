@@ -10,7 +10,6 @@ Included:
 - usage aggregation by day across a requested date range
 
 Not included:
-- public analytics APIs
 - dashboard UI
 - advanced segmentation
 
@@ -47,7 +46,7 @@ Current usage shape:
 
 ## Known Limits
 
-- no API routes yet
+- no analytics desktop page yet
 - no project-level filter yet
 - no connector breakdown in usage points yet
 - overview is all-time only in this phase
