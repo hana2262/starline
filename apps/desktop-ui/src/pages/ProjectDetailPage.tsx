@@ -2,6 +2,7 @@ import type { ProjectResponse } from "@starline/shared";
 import { useState } from "react";
 import { useAssets } from "../hooks/useAssets.js";
 import AssetList from "../components/AssetList.js";
+import { useI18n } from "../lib/i18n.js";
 
 interface Props {
   apiReady: boolean;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export default function ProjectDetailPage(props: Props) {
+  const { text, formatProjectStatus } = useI18n();
   const [page, setPage] = useState(0);
   const pageSize = 5;
   const projectAssets = useAssets(
@@ -36,21 +38,21 @@ export default function ProjectDetailPage(props: Props) {
         onClick={props.onBack}
         className="text-sm text-blue-600 hover:text-blue-700"
       >
-        ← Back to projects
+        ← {text.projectDetailBack}
       </button>
 
-      {props.isLoading && <p className="text-sm text-gray-500">Loading project...</p>}
+      {props.isLoading && <p className="text-sm text-gray-500">{text.loadingProject}</p>}
 
       {props.isError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-sm font-medium text-red-700">Failed to load project</p>
+          <p className="text-sm font-medium text-red-700">{text.projectLoadFailed}</p>
           <p className="text-sm text-red-600 mt-1">{String(props.error)}</p>
         </div>
       )}
 
       {!props.isLoading && !props.isError && !props.project && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <p className="text-sm font-medium text-yellow-800">Project not found</p>
+          <p className="text-sm font-medium text-yellow-800">{text.projectNotFound}</p>
         </div>
       )}
 
@@ -61,7 +63,7 @@ export default function ProjectDetailPage(props: Props) {
               <div>
                 <h2 className="text-2xl font-semibold text-gray-900">{props.project.name}</h2>
                 <p className="text-sm text-gray-500 mt-1">
-                  {props.project.description || "No description yet."}
+                  {props.project.description || text.noDescriptionYet}
                 </p>
               </div>
               <span
@@ -71,41 +73,41 @@ export default function ProjectDetailPage(props: Props) {
                     : "bg-gray-100 text-gray-600"
                 }`}
               >
-                {props.project.status}
+                {formatProjectStatus(props.project.status)}
               </span>
             </div>
 
             <dl className="mt-6 grid gap-4 sm:grid-cols-2 text-sm">
               <div>
-                <dt className="text-gray-500">Created</dt>
+                <dt className="text-gray-500">{text.created}</dt>
                 <dd className="text-gray-900 mt-1">{new Date(props.project.createdAt).toLocaleString()}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">Updated</dt>
+                <dt className="text-gray-500">{text.updated}</dt>
                 <dd className="text-gray-900 mt-1">{new Date(props.project.updatedAt).toLocaleString()}</dd>
               </div>
             </dl>
           </section>
 
           <section className="bg-white border border-dashed border-gray-300 rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-900">Project Assets</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{text.projectAssets}</h3>
             <p className="text-sm text-gray-500 mt-2">
-              Assets linked to this project through existing `projectId` linkage.
+              {text.projectAssetsBody}
             </p>
 
             <div className="mt-4">
-              {projectAssets.isLoading && <p className="text-sm text-gray-500">Loading project assets...</p>}
+              {projectAssets.isLoading && <p className="text-sm text-gray-500">{text.loadingProjectAssets}</p>}
               {projectAssets.isError && (
-                <p className="text-sm text-red-600">Failed to load project assets: {String(projectAssets.error)}</p>
+                <p className="text-sm text-red-600">{text.projectAssetsLoadError} {String(projectAssets.error)}</p>
               )}
               {projectAssets.data && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between text-sm text-gray-500">
                     <span>
-                      Showing {projectAssets.data.items.length} of {projectAssets.data.total} assets
+                      {text.showingAssets(projectAssets.data.items.length, projectAssets.data.total)}
                     </span>
                     <span>
-                      Page {page + 1} / {totalPages}
+                      {text.pageLabel(page + 1, totalPages)}
                     </span>
                   </div>
 
@@ -117,14 +119,14 @@ export default function ProjectDetailPage(props: Props) {
                       disabled={page === 0}
                       className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                     >
-                      Previous
+                      {text.previous}
                     </button>
                     <button
                       onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
                       disabled={page >= totalPages - 1}
                       className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                     >
-                      Next
+                      {text.next}
                     </button>
                   </div>
                 </div>

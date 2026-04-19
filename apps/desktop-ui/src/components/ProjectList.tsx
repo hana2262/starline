@@ -1,5 +1,6 @@
 import type { ProjectResponse } from "@starline/shared";
 import ProjectCard from "./ProjectCard.js";
+import { useI18n } from "../lib/i18n.js";
 
 interface Props {
   projects: ProjectResponse[];
@@ -7,10 +8,12 @@ interface Props {
 }
 
 export default function ProjectList({ projects, onOpenProject }: Props) {
+  const { text } = useI18n();
+
   if (projects.length === 0) {
     return (
       <p className="text-gray-400 text-sm text-center py-12">
-        No projects yet. Create one to get started.
+        {text.projectListEmpty}
       </p>
     );
   }

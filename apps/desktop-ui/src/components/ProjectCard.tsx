@@ -1,5 +1,6 @@
 import type { ProjectResponse } from "@starline/shared";
 import { useArchiveProject } from "../hooks/useProjects.js";
+import { useI18n } from "../lib/i18n.js";
 
 interface Props {
   project: ProjectResponse;
@@ -8,6 +9,7 @@ interface Props {
 
 export default function ProjectCard({ project, onOpen }: Props) {
   const archive = useArchiveProject();
+  const { text, formatProjectStatus } = useI18n();
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-start justify-between hover:shadow-sm transition-shadow">
@@ -30,20 +32,20 @@ export default function ProjectCard({ project, onOpen }: Props) {
               : "bg-gray-100 text-gray-500"
           }`}
         >
-          {project.status}
+          {formatProjectStatus(project.status)}
         </span>
       </div>
       {project.status === "active" && (
         <button
           onClick={() => {
-            if (confirm(`Archive "${project.name}"?`)) {
+            if (confirm(text.archiveConfirm(project.name))) {
               archive.mutate(project.id);
             }
           }}
           className="text-xs text-gray-400 hover:text-red-500 ml-4 shrink-0"
-          title="Archive project"
+          title={text.archiveProject}
         >
-          Archive
+          {text.archive}
         </button>
       )}
     </div>

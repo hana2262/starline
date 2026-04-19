@@ -1,4 +1,5 @@
 import type { AssetListResponse } from "@starline/shared";
+import { useI18n } from "../lib/i18n.js";
 
 interface Props {
   result: AssetListResponse;
@@ -11,10 +12,12 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function AssetList({ result }: Props) {
+  const { text, formatAssetType } = useI18n();
+
   if (result.items.length === 0) {
     return (
       <div className="bg-white border border-dashed border-gray-300 rounded-lg p-8 text-center text-sm text-gray-500">
-        No assets found. Import a file or adjust your filters.
+        {text.assetEmpty}
       </div>
     );
   }
@@ -29,7 +32,7 @@ export default function AssetList({ result }: Props) {
               <p className="text-sm text-gray-500 mt-1 break-all">{asset.filePath}</p>
             </div>
             <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 shrink-0">
-              {asset.type}
+              {formatAssetType(asset.type)}
             </span>
           </div>
 
@@ -38,12 +41,12 @@ export default function AssetList({ result }: Props) {
               {formatFileSize(asset.fileSize)}
             </span>
             <span className="px-2 py-1 rounded bg-gray-100">
-              {asset.projectId ?? "No project"}
+              {asset.projectId ?? text.assetStatusNoProject}
             </span>
             <span className="px-2 py-1 rounded bg-gray-100">{asset.status}</span>
             {asset.sourceConnector && (
               <span className="px-2 py-1 rounded bg-purple-50 text-purple-700">
-                {asset.sourceConnector}
+                {text.assetGeneratedFrom}: {asset.sourceConnector}
               </span>
             )}
           </div>
@@ -62,4 +65,3 @@ export default function AssetList({ result }: Props) {
     </div>
   );
 }
-

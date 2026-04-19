@@ -1,4 +1,5 @@
 import type { AssetType, ProjectResponse } from "@starline/shared";
+import { useI18n } from "../lib/i18n.js";
 
 interface Props {
   query: string;
@@ -14,43 +15,45 @@ interface Props {
 const ASSET_TYPES: Array<AssetType> = ["image", "video", "audio", "prompt", "other"];
 
 export default function AssetFilters(props: Props) {
+  const { text, formatAssetType } = useI18n();
+
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
       <div className="grid gap-4 md:grid-cols-3">
         <label className="block">
-          <span className="block text-sm font-medium text-gray-700 mb-1">Search</span>
+          <span className="block text-sm font-medium text-gray-700 mb-1">{text.search}</span>
           <input
             value={props.query}
             onChange={(event) => props.onQueryChange(event.target.value)}
-            placeholder="Search by keyword"
+            placeholder={text.searchPlaceholder}
             className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </label>
 
         <label className="block">
-          <span className="block text-sm font-medium text-gray-700 mb-1">Type</span>
+          <span className="block text-sm font-medium text-gray-700 mb-1">{text.type}</span>
           <select
             value={props.selectedType}
             onChange={(event) => props.onTypeChange(event.target.value as AssetType | "")}
             className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">All types</option>
+            <option value="">{text.allTypes}</option>
             {ASSET_TYPES.map((type) => (
               <option key={type} value={type}>
-                {type}
+                {formatAssetType(type)}
               </option>
             ))}
           </select>
         </label>
 
         <label className="block">
-          <span className="block text-sm font-medium text-gray-700 mb-1">Project</span>
+          <span className="block text-sm font-medium text-gray-700 mb-1">{text.project}</span>
           <select
             value={props.selectedProjectId}
             onChange={(event) => props.onProjectChange(event.target.value)}
             className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="">All projects</option>
+            <option value="">{text.allProjects}</option>
             {props.projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
@@ -65,10 +68,9 @@ export default function AssetFilters(props: Props) {
           onClick={props.onReset}
           className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
         >
-          Reset filters
+          {text.resetFilters}
         </button>
       </div>
     </div>
   );
 }
-

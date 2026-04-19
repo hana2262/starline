@@ -1,3 +1,5 @@
+import { useI18n } from "../lib/i18n.js";
+
 type View = "projects" | "assets" | "connectors" | "agent" | "analytics";
 
 interface Props {
@@ -6,6 +8,8 @@ interface Props {
 }
 
 export default function AppNav({ activeView, onNavigate }: Props) {
+  const { text } = useI18n();
+
   const itemClass = (view: View) =>
     `px-3 py-2 text-sm rounded-md transition-colors ${
       activeView === view
@@ -16,19 +20,19 @@ export default function AppNav({ activeView, onNavigate }: Props) {
   return (
     <nav className="flex items-center gap-2">
       <button className={itemClass("projects")} onClick={() => onNavigate("projects")}>
-        Projects
+        {text.navProjects}
       </button>
       <button className={itemClass("assets")} onClick={() => onNavigate("assets")}>
-        Assets
+        {text.navAssets}
       </button>
       <button className={itemClass("connectors")} onClick={() => onNavigate("connectors")}>
-        Connectors
+        {text.navConnectors}
       </button>
       <button className={itemClass("agent")} onClick={() => onNavigate("agent")}>
-        Agent
+        {text.navAgent}
       </button>
       <button className={itemClass("analytics")} onClick={() => onNavigate("analytics")}>
-        Analytics
+        {text.navAnalytics}
       </button>
     </nav>
   );
