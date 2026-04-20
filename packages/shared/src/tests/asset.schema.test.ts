@@ -17,6 +17,7 @@ const validAsset = {
   tags:             [],
   description:      null,
   status:           "active" as const,
+  visibility:       "public" as const,
   createdAt:        new Date().toISOString(),
   updatedAt:        new Date().toISOString(),
   sourceConnector:  null,
