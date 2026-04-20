@@ -106,6 +106,13 @@ type Messages = {
   askAgentPlaceholder: string;
   running: string;
   askAgentAction: string;
+  agentPrivateAccessLabel: string;
+  agentPrivateAccessTitle: string;
+  agentPrivateAccessToggle: string;
+  agentPrivateAccessDisabledBody: string;
+  agentPrivateAccessEnabledBody: string;
+  agentPrivateAccessDisabledHint: string;
+  agentPrivateAccessEnabledHint: string;
   loadingSession: string;
   noSessionTitle: string;
   noSessionBody: string;
@@ -286,6 +293,13 @@ const MESSAGES: Record<Locale, Messages> = {
     askAgentPlaceholder: "Ask for a prompt rewrite, asset shortlist, or next-step suggestion...",
     running: "Running...",
     askAgentAction: "Ask Agent",
+    agentPrivateAccessLabel: "Private Access",
+    agentPrivateAccessTitle: "Allow private content for this query",
+    agentPrivateAccessToggle: "Toggle private access for this query",
+    agentPrivateAccessDisabledBody: "Default safe mode. The agent will not read private projects or assets.",
+    agentPrivateAccessEnabledBody: "Enabled only for this request. The agent may read private projects and assets.",
+    agentPrivateAccessDisabledHint: "Private content is currently excluded from retrieval.",
+    agentPrivateAccessEnabledHint: "This query will include private content in retrieval.",
     loadingSession: "Loading session...",
     noSessionTitle: "No session started yet.",
     noSessionBody: "Pick a project scope if needed, ask a question, and the agent will persist the conversation locally.",
@@ -456,6 +470,13 @@ const MESSAGES: Record<Locale, Messages> = {
     askAgentPlaceholder: "例如：改写 prompt、挑选参考资产、给出下一步建议...",
     running: "运行中...",
     askAgentAction: "发送给 Agent",
+    agentPrivateAccessLabel: "私密访问",
+    agentPrivateAccessTitle: "仅本次提问允许读取 private 内容",
+    agentPrivateAccessToggle: "切换本次提问的 private 访问权限",
+    agentPrivateAccessDisabledBody: "默认安全模式。Agent 不会读取 private 项目和资产。",
+    agentPrivateAccessEnabledBody: "仅对本次请求生效。Agent 可能读取 private 项目和资产。",
+    agentPrivateAccessDisabledHint: "当前检索不会包含 private 内容。",
+    agentPrivateAccessEnabledHint: "本次提问会把 private 内容纳入检索范围。",
     loadingSession: "正在加载会话...",
     noSessionTitle: "还没有开始会话。",
     noSessionBody: "如有需要先选择项目范围，然后提出问题，Agent 会把对话持久化到本地。",

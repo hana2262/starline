@@ -32,6 +32,7 @@ export default function AgentPage({ apiReady, projects }: Props) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [allowPrivateForThisQuery, setAllowPrivateForThisQuery] = useState(false);
   const [lastSnapshot, setLastSnapshot] = useState<AgentSessionResult | null>(null);
 
   const session = useAgentSession(sessionId, apiReady);
@@ -58,6 +59,7 @@ export default function AgentPage({ apiReady, projects }: Props) {
     const result = await sendQuery.mutateAsync({
       sessionId: sessionId ?? undefined,
       projectId: selectedProjectId || undefined,
+      allowPrivateForThisQuery,
       query: trimmed,
     });
 
@@ -86,6 +88,7 @@ export default function AgentPage({ apiReady, projects }: Props) {
   function startNewSession() {
     setSessionId(null);
     setDraft("");
+    setAllowPrivateForThisQuery(false);
     setLastSnapshot(null);
   }
 
@@ -137,6 +140,39 @@ export default function AgentPage({ apiReady, projects }: Props) {
               </select>
             </label>
 
+            <label className="min-w-[280px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    {text.agentPrivateAccessLabel}
+                  </p>
+                  <p className="mt-2 text-sm font-medium text-slate-900">
+                    {text.agentPrivateAccessTitle}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {allowPrivateForThisQuery
+                      ? text.agentPrivateAccessEnabledBody
+                      : text.agentPrivateAccessDisabledBody}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAllowPrivateForThisQuery((current) => !current)}
+                  className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors ${
+                    allowPrivateForThisQuery ? "bg-amber-500" : "bg-slate-300"
+                  }`}
+                  aria-pressed={allowPrivateForThisQuery}
+                  title={text.agentPrivateAccessToggle}
+                >
+                  <span
+                    className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                      allowPrivateForThisQuery ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
+            </label>
+
             <label className="min-w-[280px] flex-[2]">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{text.askAgent}</span>
               <textarea
@@ -162,6 +198,16 @@ export default function AgentPage({ apiReady, projects }: Props) {
               {String(sendQuery.error)}
             </p>
           )}
+
+          <p className={`mt-4 rounded-xl border px-4 py-3 text-sm ${
+            allowPrivateForThisQuery
+              ? "border-amber-200 bg-amber-50 text-amber-800"
+              : "border-slate-200 bg-slate-50 text-slate-600"
+          }`}>
+            {allowPrivateForThisQuery
+              ? text.agentPrivateAccessEnabledHint
+              : text.agentPrivateAccessDisabledHint}
+          </p>
 
           <div className="mt-6 space-y-4">
             {session.isLoading && sessionId && (
