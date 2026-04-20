@@ -124,4 +124,27 @@ describe("Asset Import API", () => {
     const res = await app.inject({ method: "GET", url: "/api/assets/no-such-id" });
     expect(res.statusCode).toBe(404);
   });
+
+  it("PATCH /api/assets/:id updates asset visibility", async () => {
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/assets/${assetId}`,
+      payload: { visibility: "public" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ id: string; visibility: string }>();
+    expect(body.id).toBe(assetId);
+    expect(body.visibility).toBe("public");
+  });
+
+  it("PATCH /api/assets/:id returns 400 on empty update", async () => {
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/assets/${assetId}`,
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
 });

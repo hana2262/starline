@@ -16,6 +16,14 @@ export const ImportAssetSchema = z.object({
 
 export type ImportAssetInput = z.infer<typeof ImportAssetSchema>;
 
+export const UpdateAssetSchema = z.object({
+  visibility: VisibilitySchema.optional(),
+}).refine((input) => input.visibility !== undefined, {
+  message: "At least one field must be provided",
+});
+
+export type UpdateAssetInput = z.infer<typeof UpdateAssetSchema>;
+
 export const AssetResponseSchema = z.object({
   id:               z.string(),
   projectId:        z.string().nullable(),

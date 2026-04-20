@@ -8,6 +8,7 @@ import type {
   AssetResponse,
   ListAssetsQuery,
   AssetListResponse,
+  UpdateAssetInput,
 } from "@starline/shared";
 import type { computeFileHash } from "./file.utils.js";
 
@@ -159,6 +160,20 @@ export function createAssetService(repo: AssetRepository, computeHash: ComputeHa
     getById(id: string): AssetResponse | null {
       const row = repo.getById(id);
       return row ? toResponse(row) : null;
+    },
+
+    update(id: string, input: UpdateAssetInput): AssetResponse | null {
+      const existing = repo.getById(id);
+      if (!existing) return null;
+
+      let row = existing;
+      if (input.visibility !== undefined) {
+        const updated = repo.updateVisibility(id, input.visibility);
+        if (!updated) return null;
+        row = updated;
+      }
+
+      return toResponse(row);
     },
 
     list(filters: ListAssetsQuery): AssetListResponse {

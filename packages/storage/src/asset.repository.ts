@@ -105,6 +105,20 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
       return row ? toAssetRow(row) : undefined;
     },
 
+    updateVisibility(id: string, visibility: "public" | "private"): AssetRow | undefined {
+      db
+        .update(assets)
+        .set({
+          visibility,
+          updatedAt: now(),
+        })
+        .where(eq(assets.id, id))
+        .run();
+
+      const row = db.select().from(assets).where(eq(assets.id, id)).get();
+      return row ? toAssetRow(row) : undefined;
+    },
+
     listByProject(projectId: string): AssetRow[] {
       return db.select().from(assets).where(eq(assets.projectId, projectId)).all().map(toAssetRow);
     },

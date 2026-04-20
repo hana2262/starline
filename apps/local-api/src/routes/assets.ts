@@ -2,7 +2,7 @@ import { createReadStream, existsSync, statSync } from "fs";
 import type { FastifyInstance } from "fastify";
 import type { AssetService } from "@starline/domain";
 import { AssetImportError } from "@starline/domain";
-import { ImportAssetSchema, ListAssetsQuerySchema } from "@starline/shared";
+import { ImportAssetSchema, ListAssetsQuerySchema, UpdateAssetSchema } from "@starline/shared";
 
 export function registerAssetRoutes(app: FastifyInstance, assetService: AssetService) {
   app.post("/api/assets/import", async (req, reply) => {
@@ -20,6 +20,13 @@ export function registerAssetRoutes(app: FastifyInstance, assetService: AssetSer
 
   app.get<{ Params: { id: string } }>("/api/assets/:id", async (req, reply) => {
     const asset = assetService.getById(req.params.id);
+    if (!asset) return reply.code(404).send({ error: "Not found" });
+    return reply.send(asset);
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/assets/:id", async (req, reply) => {
+    const input = UpdateAssetSchema.parse(req.body);
+    const asset = assetService.update(req.params.id, input);
     if (!asset) return reply.code(404).send({ error: "Not found" });
     return reply.send(asset);
   });

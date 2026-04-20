@@ -173,6 +173,14 @@ type Messages = {
   loadingAssetDetail: string;
   assetDetailLoadFailed: string;
   assetDetailNotFound: string;
+  assetDetailPreviewTitle?: string;
+  assetDetailMetadataTitle?: string;
+  assetDetailSourceTitle?: string;
+  assetVisibilityHelp?: string;
+  saving?: string;
+  saveChanges?: string;
+  assetVisibilitySaved?: string;
+  assetVisibilitySaveFailed?: string;
   fileSizeLabel: string;
   statusLabel: string;
   mimeTypeLabel: string;
@@ -180,6 +188,7 @@ type Messages = {
   notAvailable: string;
   loadingPromptPreview: string;
   promptPreviewFailed: string;
+  mediaPreviewFailed?: string;
   previewUnavailableTitle: string;
   previewUnavailableBody: (assetType: string) => string;
 };
@@ -361,6 +370,14 @@ const MESSAGES: Record<Locale, Messages> = {
     loadingAssetDetail: "Loading asset...",
     assetDetailLoadFailed: "Failed to load asset",
     assetDetailNotFound: "Asset not found",
+    assetDetailPreviewTitle: "Preview",
+    assetDetailMetadataTitle: "Metadata",
+    assetDetailSourceTitle: "Source",
+    assetVisibilityHelp: "Choose whether this asset should be visible to agent retrieval by default.",
+    saving: "Saving...",
+    saveChanges: "Save changes",
+    assetVisibilitySaved: "Asset visibility saved.",
+    assetVisibilitySaveFailed: "Failed to save asset visibility.",
     fileSizeLabel: "File size",
     statusLabel: "Status",
     mimeTypeLabel: "MIME type",
@@ -368,6 +385,7 @@ const MESSAGES: Record<Locale, Messages> = {
     notAvailable: "Not available",
     loadingPromptPreview: "Loading prompt preview...",
     promptPreviewFailed: "Prompt preview could not be loaded from the local file path.",
+    mediaPreviewFailed: "Preview could not be loaded for this local file.",
     previewUnavailableTitle: "Preview unavailable",
     previewUnavailableBody: (assetType) => `${assetType} preview is not supported in the current MVP.`,
   },

@@ -7,6 +7,7 @@ import type {
   ImportAssetInput,
   ImportAssetResult,
   ListAssetsQuery,
+  UpdateAssetInput,
   ConnectorConfigListResult,
   ConnectorConfigUpsertInput,
   ConnectorConfigUpsertResult,
@@ -66,6 +67,11 @@ export const assetsApi = {
   list: (query: ListAssetsQuery) =>
     request<AssetListResponse>(`/assets${toQueryString(query)}`),
   getById: (id: string) => request<AssetResponse>(`/assets/${id}`),
+  update: (id: string, input: UpdateAssetInput) =>
+    request<AssetResponse>(`/assets/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
   contentUrl: (id: string) => `${BASE}/assets/${id}/content`,
   import: (input: ImportAssetInput) =>
     request<ImportAssetResult>("/assets/import", {

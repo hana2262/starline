@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AssetResponse, ProjectResponse } from "@starline/shared";
+import { useUpdateAsset } from "../hooks/useAsset.js";
 import { useI18n } from "../lib/i18n.js";
 import { assetsApi } from "../lib/api.js";
 
@@ -22,7 +23,12 @@ function AssetPreview({ asset }: { asset: AssetResponse }) {
   const { text, formatAssetType } = useI18n();
   const [promptContent, setPromptContent] = useState<string>("");
   const [promptState, setPromptState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [mediaFailed, setMediaFailed] = useState(false);
   const contentUrl = useMemo(() => assetsApi.contentUrl(asset.id), [asset.id]);
+
+  useEffect(() => {
+    setMediaFailed(false);
+  }, [asset.id, asset.type]);
 
   useEffect(() => {
     if (asset.type !== "prompt") {
@@ -33,6 +39,7 @@ function AssetPreview({ asset }: { asset: AssetResponse }) {
 
     let cancelled = false;
     setPromptState("loading");
+
     fetch(contentUrl)
       .then((response) => {
         if (!response.ok) {
@@ -60,24 +67,48 @@ function AssetPreview({ asset }: { asset: AssetResponse }) {
 
   if (asset.type === "image") {
     return (
+      <div className="space-y-3">
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
-        <img src={contentUrl} alt={asset.name} className="max-h-[32rem] w-full object-contain" />
+          <img
+            src={contentUrl}
+            alt={asset.name}
+            className="max-h-[32rem] w-full object-contain"
+            onError={() => setMediaFailed(true)}
+          />
+        </div>
+        {mediaFailed && <p className="text-sm text-red-600">{text.mediaPreviewFailed ?? text.assetDetailLoadFailed}</p>}
       </div>
     );
   }
 
   if (asset.type === "video") {
     return (
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-black">
-        <video src={contentUrl} controls className="max-h-[32rem] w-full" />
+      <div className="space-y-3">
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-black">
+          <video
+            src={contentUrl}
+            controls
+            className="max-h-[32rem] w-full"
+            onError={() => setMediaFailed(true)}
+          />
+        </div>
+        {mediaFailed && <p className="text-sm text-red-600">{text.mediaPreviewFailed ?? text.assetDetailLoadFailed}</p>}
       </div>
     );
   }
 
   if (asset.type === "audio") {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <audio src={contentUrl} controls className="w-full" />
+      <div className="space-y-3">
+        <div className="rounded-xl border border-gray-200 bg-white p-6">
+          <audio
+            src={contentUrl}
+            controls
+            className="w-full"
+            onError={() => setMediaFailed(true)}
+          />
+        </div>
+        {mediaFailed && <p className="text-sm text-red-600">{text.mediaPreviewFailed ?? text.assetDetailLoadFailed}</p>}
       </div>
     );
   }
@@ -112,13 +143,31 @@ function AssetPreview({ asset }: { asset: AssetResponse }) {
 
 export default function AssetDetailPage({ asset, projects, isLoading, isError, error, onBack }: Props) {
   const { text, formatAssetType, formatVisibility } = useI18n();
+  const updateAsset = useUpdateAsset();
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [saveNotice, setSaveNotice] = useState<"idle" | "saved" | "failed">("idle");
+
+  useEffect(() => {
+    if (asset) {
+      setVisibility(asset.visibility);
+      setSaveNotice("idle");
+    }
+  }, [asset]);
+
   const project = useMemo(
     () => projects.find((item) => item.id === asset?.projectId) ?? null,
     [asset?.projectId, projects],
   );
 
+  const generationMeta = useMemo(() => {
+    if (!asset?.generationMeta) return null;
+    return asset.generationMeta;
+  }, [asset?.generationMeta]);
+
+  const visibilityDirty = asset ? visibility !== asset.visibility : false;
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <button onClick={onBack} className="text-sm text-blue-600 hover:text-blue-700">
         {text.assetDetailBack}
       </button>
@@ -139,15 +188,56 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
       )}
 
       {asset && (
-        <>
-          <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
-            <AssetPreview asset={asset} />
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
+          <div className="space-y-4">
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                {text.assetDetailPreviewTitle ?? "Preview"}
+              </h3>
+              <div className="mt-4">
+                <AssetPreview asset={asset} />
+              </div>
+            </div>
 
+            <div className="rounded-xl border border-gray-200 bg-white p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                {text.assetDetailSourceTitle ?? "Source"}
+              </h3>
+              <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-gray-500">{text.assetGeneratedFrom}</dt>
+                  <dd className="mt-1 text-gray-900">{asset.sourceConnector ?? text.notAvailable}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">{text.project}</dt>
+                  <dd className="mt-1 text-gray-900">{project?.name ?? text.noProject}</dd>
+                </div>
+                {asset.generationPrompt && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-gray-500">Prompt</dt>
+                    <dd className="mt-1 whitespace-pre-wrap break-words text-gray-900">
+                      {asset.generationPrompt}
+                    </dd>
+                  </div>
+                )}
+                {generationMeta && (
+                  <div className="sm:col-span-2">
+                    <dt className="text-gray-500">Meta</dt>
+                    <dd className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-3 font-mono text-xs text-gray-700">
+                      {generationMeta}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          </div>
+
+          <div className="space-y-4">
             <div className="rounded-xl border border-gray-200 bg-white p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="truncate text-2xl font-semibold text-gray-900">{asset.name}</h2>
-                  <p className="mt-1 text-sm text-gray-500 break-all">{asset.filePath}</p>
+                  <p className="mt-1 break-all text-sm text-gray-500">{asset.filePath}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
@@ -159,7 +249,57 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
                 </div>
               </div>
 
-              <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-2">
+              <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <label className="block">
+                  <span className="block text-sm font-medium text-gray-700">{text.visibilityLabel}</span>
+                  <select
+                    value={visibility}
+                    onChange={(event) => {
+                      setVisibility(event.target.value as "public" | "private");
+                      setSaveNotice("idle");
+                    }}
+                    className="mt-2 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={updateAsset.isPending}
+                  >
+                    <option value="public">{formatVisibility("public")}</option>
+                    <option value="private">{formatVisibility("private")}</option>
+                  </select>
+                </label>
+                <p className="mt-2 text-xs text-gray-500">
+                  {text.assetVisibilityHelp ?? "Choose whether this asset should be visible to agent retrieval by default."}
+                </p>
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      updateAsset.mutate(
+                        { id: asset.id, input: { visibility } },
+                        {
+                          onSuccess: () => setSaveNotice("saved"),
+                          onError: () => setSaveNotice("failed"),
+                        },
+                      );
+                    }}
+                    disabled={!visibilityDirty || updateAsset.isPending}
+                    className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                  >
+                    {updateAsset.isPending ? (text.saving ?? "Saving...") : (text.saveChanges ?? "Save changes")}
+                  </button>
+                  {saveNotice === "saved" && (
+                    <span className="text-sm text-green-700">{text.assetVisibilitySaved ?? "Asset visibility saved."}</span>
+                  )}
+                  {saveNotice === "failed" && (
+                    <span className="text-sm text-red-600">{text.assetVisibilitySaveFailed ?? "Failed to save asset visibility."}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-6">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                {text.assetDetailMetadataTitle ?? "Metadata"}
+              </h3>
+
+              <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-gray-500">{text.project}</dt>
                   <dd className="mt-1 text-gray-900">{project?.name ?? text.noProject}</dd>
@@ -192,17 +332,11 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
                   <dt className="text-gray-500">{text.contentHashLabel}</dt>
                   <dd className="mt-1 break-all text-gray-900">{asset.contentHash}</dd>
                 </div>
-                {asset.sourceConnector && (
-                  <div>
-                    <dt className="text-gray-500">{text.assetGeneratedFrom}</dt>
-                    <dd className="mt-1 text-gray-900">{asset.sourceConnector}</dd>
-                  </div>
-                )}
               </dl>
 
               {asset.tags.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="text-sm font-medium text-gray-700">{text.tags}</h3>
+                  <h4 className="text-sm font-medium text-gray-700">{text.tags}</h4>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {asset.tags.map((tag) => (
                       <span key={tag} className="rounded-full bg-green-50 px-2 py-1 text-xs text-green-700">
@@ -213,8 +347,8 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
                 </div>
               )}
             </div>
-          </section>
-        </>
+          </div>
+        </section>
       )}
     </div>
   );
