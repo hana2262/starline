@@ -2,9 +2,7 @@
 
 [English README](./README_en.md)
 
-StarLine 是一个面向 AI 创作者的 Windows 本地优先工作台，用来统一管理项目、素材、模型连接器、生成任务、Agent 辅助能力和本地分析数据。
-
-当前仓库对应的 `v1.0` 已完成 MVP 主线，重点是把“本地可运行、桌面可用、核心链路打通”作为第一目标，而不是做云端化或团队协作平台。
+StarLine 是一个面向 AI 创作者的 Windows 本地优先工作台，用来统一管理项目、ai创作资产，此外还添加了模型连接器、生成任务、Agent 辅助能力和本地分析数据等功能。
 
 ## 核心特性
 
@@ -47,13 +45,12 @@ packages/
 ## 当前 MVP 已完成内容
 
 - Monorepo skeleton 与桌面应用启动链路
-- Project CRUD
-- Asset import、去重、索引与搜索/筛选
-- MiniMax connector
-- Stable Diffusion connector
-- Generation job lifecycle
-- Basic Agent query MVP
-- Local analytics pipeline 与 dashboard MVP
+- 本地项目管理
+- ai资产导入、去重、索引与搜索/筛选
+- MiniMax 链接器
+- Stable Diffusion 链接器
+- Agent端口（尚未连接）
+- 本地分析面板
 
 ## 快速开始
 
@@ -106,4 +103,3 @@ StarLine 不是“纯前端桌面壳”。它由两部分组成：
 - 实时协作
 
 这些能力会放到后续版本，而不是在当前本地优先 MVP 阶段完成。
-

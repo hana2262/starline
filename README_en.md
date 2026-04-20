@@ -2,9 +2,7 @@
 
 [中文说明 / Chinese README](./README.md)
 
-StarLine is a Windows local-first workspace for AI creators. It is designed to unify project management, asset organization, model connectors, generation jobs, agent assistance, and local analytics in one desktop application.
-
-The current repository corresponds to the `v1.0` release line. The MVP focus is to make the product runnable locally, usable on desktop, and complete across the core workflows, rather than turning it into a cloud-first or collaboration-heavy platform at this stage.
+StarLine is a Windows local-first workspace for AI creators. It is designed to unify project management and AI creation assets, while also providing model connectors, generation jobs, agent assistance, and local analytics in one desktop application.
 
 ## Core Features
 
@@ -47,13 +45,12 @@ packages/
 ## Current MVP Coverage
 
 - Monorepo skeleton and desktop app boot flow
-- Project CRUD
-- Asset import, deduplication, indexing, search, and filters
+- Local project management
+- AI asset import, deduplication, indexing, search, and filters
 - MiniMax connector
 - Stable Diffusion connector
-- Generation job lifecycle
-- Basic Agent query MVP
-- Local analytics pipeline and dashboard MVP
+- Agent endpoint (not connected yet)
+- Local analytics dashboard
 
 ## Quick Start
 
