@@ -7,6 +7,9 @@ export const projects = sqliteTable("projects", {
   status: text("status", { enum: ["active", "archived"] })
     .notNull()
     .default("active"),
+  visibility: text("visibility", { enum: ["public", "private"] })
+    .notNull()
+    .default("public"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -28,6 +31,7 @@ export const assets = sqliteTable(
     tags:        text("tags").notNull().default("[]"),
     description:      text("description"),
     status:           text("status", { enum: ["active", "archived"] }).notNull().default("active"),
+    visibility:       text("visibility", { enum: ["public", "private"] }).notNull().default("public"),
     createdAt:        text("created_at").notNull(),
     updatedAt:        text("updated_at").notNull(),
     sourceConnector:  text("source_connector"),

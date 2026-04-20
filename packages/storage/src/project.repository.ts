@@ -10,12 +10,17 @@ function now(): string {
 
 export function createProjectRepository(db: Db) {
   return {
-    create(input: { name: string; description?: string | null }): Project {
+    create(input: {
+      name: string;
+      description?: string | null;
+      visibility?: "public" | "private";
+    }): Project {
       const row: NewProject = {
         id: randomUUID(),
         name: input.name,
         description: input.description ?? null,
         status: "active",
+        visibility: input.visibility ?? "public",
         createdAt: now(),
         updatedAt: now(),
       };
@@ -31,7 +36,14 @@ export function createProjectRepository(db: Db) {
       return db.select().from(projects).where(eq(projects.id, id)).get();
     },
 
-    update(id: string, input: { name?: string; description?: string | null }): Project | undefined {
+    update(
+      id: string,
+      input: {
+        name?: string;
+        description?: string | null;
+        visibility?: "public" | "private";
+      },
+    ): Project | undefined {
       const existing = this.getById(id);
       if (!existing) return undefined;
       const updated = {

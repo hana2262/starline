@@ -24,6 +24,7 @@ function toProjectResponse(row: {
   name: string;
   description: string | null;
   status: "active" | "archived";
+  visibility: "public" | "private";
   createdAt: string;
   updatedAt: string;
 }): ProjectResponse {
@@ -32,6 +33,7 @@ function toProjectResponse(row: {
     name: row.name,
     description: row.description,
     status: row.status,
+    visibility: row.visibility,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -74,6 +76,43 @@ function buildAssetReason(query: string, asset: {
 
 function formatAssetLine(asset: AgentAssetReference): string {
   return `- ${asset.name} (${asset.type})${asset.reason ? `: ${asset.reason}` : ""}`;
+}
+
+function isAgentVisibleAsset(
+  asset: {
+    projectId: string | null;
+    visibility: "public" | "private";
+  },
+  projectRepo: ProjectRepository,
+): boolean {
+  if (asset.visibility !== "public") return false;
+  if (!asset.projectId) return true;
+  const project = projectRepo.getById(asset.projectId);
+  if (!project) return true;
+  return project.visibility === "public";
+}
+
+function listAgentAssets(input: {
+  assetRepo: AssetRepository;
+  projectRepo: ProjectRepository;
+  query?: string;
+  projectId?: string;
+  allowPrivateForThisQuery: boolean;
+}): ReturnType<AssetRepository["list"]>["items"] {
+  const items = input.assetRepo.list({
+    query: input.query,
+    projectId: input.projectId,
+    type: undefined,
+    visibility: input.allowPrivateForThisQuery ? undefined : "public",
+    limit: 5,
+    offset: 0,
+  }).items;
+
+  if (input.allowPrivateForThisQuery) {
+    return items;
+  }
+
+  return items.filter((asset) => isAgentVisibleAsset(asset, input.projectRepo));
 }
 
 function buildAssistantResponse(input: {
@@ -142,6 +181,10 @@ export function createAgentService(
       if (effectiveProjectId && !projectRow) {
         throw new AgentError("Project not found", "PROJECT_NOT_FOUND", { projectId: effectiveProjectId });
       }
+      const allowPrivateForThisQuery = input.allowPrivateForThisQuery === true;
+      const agentVisibleProject = allowPrivateForThisQuery
+        ? projectRow
+        : projectRow?.visibility === "public" ? projectRow : undefined;
 
       const session = existingSession ?? agentRepo.createSession({
         projectId: effectiveProjectId,
@@ -149,23 +192,23 @@ export function createAgentService(
       });
 
       const previousAssistantReplyCount = agentRepo.listMessagesBySessionAndRole(session.id, "assistant").length;
-      let matchedAssets = assetRepo.list({
+      let matchedAssets = listAgentAssets({
+        assetRepo,
+        projectRepo,
         query: input.query,
-        projectId: effectiveProjectId ?? undefined,
-        type: undefined,
-        limit: 5,
-        offset: 0,
-      }).items;
+        projectId: agentVisibleProject ? effectiveProjectId ?? undefined : undefined,
+        allowPrivateForThisQuery,
+      });
       let fallbackUsed = false;
 
       if (matchedAssets.length === 0) {
-        matchedAssets = assetRepo.list({
+        matchedAssets = listAgentAssets({
+          assetRepo,
+          projectRepo,
           query: undefined,
-          projectId: effectiveProjectId ?? undefined,
-          type: undefined,
-          limit: 5,
-          offset: 0,
-        }).items;
+          projectId: agentVisibleProject ? effectiveProjectId ?? undefined : undefined,
+          allowPrivateForThisQuery,
+        });
         fallbackUsed = matchedAssets.length > 0;
       }
 
@@ -186,8 +229,8 @@ export function createAgentService(
       });
       const assistantContent = buildAssistantResponse({
         query: input.query.trim(),
-        projectName: projectRow?.name ?? null,
-        projectDescription: projectRow?.description ?? null,
+        projectName: agentVisibleProject?.name ?? null,
+        projectDescription: agentVisibleProject?.description ?? null,
         relatedAssets,
         previousAssistantReplyCount,
       });
@@ -218,7 +261,7 @@ export function createAgentService(
         userMessage: toMessage(userMessageRow),
         assistantMessage: toMessage(assistantMessageRow),
         relatedAssets,
-        project: projectRow ? toProjectResponse(projectRow) : null,
+        project: agentVisibleProject ? toProjectResponse(agentVisibleProject) : null,
       };
     },
 
@@ -231,6 +274,7 @@ export function createAgentService(
       const relatedAssets = relatedAssetIds
         .map((assetId) => assetRepo.getById(assetId))
         .filter((asset): asset is NonNullable<typeof asset> => Boolean(asset))
+        .filter((asset) => isAgentVisibleAsset(asset, projectRepo))
         .map((asset) => ({
           id: asset.id,
           name: asset.name,
@@ -242,12 +286,13 @@ export function createAgentService(
         }));
 
       const projectRow = session.projectId ? projectRepo.getById(session.projectId) : undefined;
+      const agentVisibleProject = projectRow?.visibility === "public" ? projectRow : undefined;
 
       return {
         session,
         messages,
         relatedAssets,
-        project: projectRow ? toProjectResponse(projectRow) : null,
+        project: agentVisibleProject ? toProjectResponse(agentVisibleProject) : null,
       };
     },
   };

@@ -66,6 +66,7 @@ export const assetsApi = {
   list: (query: ListAssetsQuery) =>
     request<AssetListResponse>(`/assets${toQueryString(query)}`),
   getById: (id: string) => request<AssetResponse>(`/assets/${id}`),
+  contentUrl: (id: string) => `${BASE}/assets/${id}/content`,
   import: (input: ImportAssetInput) =>
     request<ImportAssetResult>("/assets/import", {
       method: "POST",

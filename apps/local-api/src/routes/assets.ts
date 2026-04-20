@@ -1,3 +1,4 @@
+import { createReadStream, existsSync, statSync } from "fs";
 import type { FastifyInstance } from "fastify";
 import type { AssetService } from "@starline/domain";
 import { AssetImportError } from "@starline/domain";
@@ -21,6 +22,45 @@ export function registerAssetRoutes(app: FastifyInstance, assetService: AssetSer
     const asset = assetService.getById(req.params.id);
     if (!asset) return reply.code(404).send({ error: "Not found" });
     return reply.send(asset);
+  });
+
+  app.get<{ Params: { id: string } }>("/api/assets/:id/content", async (req, reply) => {
+    const asset = assetService.getById(req.params.id);
+    if (!asset) return reply.code(404).send({ error: "Not found" });
+    if (!existsSync(asset.filePath)) {
+      return reply.code(404).send({ error: "Asset file not found" });
+    }
+
+    const fileStat = statSync(asset.filePath);
+    const mimeType = asset.mimeType ?? "application/octet-stream";
+    const rangeHeader = req.headers.range;
+
+    reply.header("Accept-Ranges", "bytes");
+    reply.header("Content-Type", mimeType);
+    reply.header("Cache-Control", "no-store");
+    reply.header("Content-Disposition", `inline; filename="${encodeURIComponent(asset.name)}"`);
+
+    if (rangeHeader) {
+      const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+      if (!match) {
+        return reply.code(416).send({ error: "Invalid range" });
+      }
+
+      const start = match[1] ? Number(match[1]) : 0;
+      const end = match[2] ? Number(match[2]) : fileStat.size - 1;
+
+      if (Number.isNaN(start) || Number.isNaN(end) || start > end || end >= fileStat.size) {
+        return reply.code(416).send({ error: "Invalid range" });
+      }
+
+      reply.code(206);
+      reply.header("Content-Range", `bytes ${start}-${end}/${fileStat.size}`);
+      reply.header("Content-Length", String(end - start + 1));
+      return reply.send(createReadStream(asset.filePath, { start, end }));
+    }
+
+    reply.header("Content-Length", String(fileStat.size));
+    return reply.send(createReadStream(asset.filePath));
   });
 }
 

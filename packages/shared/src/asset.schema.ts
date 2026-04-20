@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { VisibilitySchema } from "./project.schema.js";
 
 export const AssetTypeSchema = z.enum(["image", "video", "audio", "prompt", "other"]);
 export type AssetType = z.infer<typeof AssetTypeSchema>;
@@ -10,6 +11,7 @@ export const ImportAssetSchema = z.object({
   projectId:   z.string().min(1).optional(),
   tags:        z.array(z.string().max(50)).max(20).optional(),
   description: z.string().max(2000).optional(),
+  visibility: VisibilitySchema.optional(),
 });
 
 export type ImportAssetInput = z.infer<typeof ImportAssetSchema>;
@@ -26,6 +28,7 @@ export const AssetResponseSchema = z.object({
   tags:             z.array(z.string()),
   description:      z.string().nullable(),
   status:           z.enum(["active", "archived"]),
+  visibility:       VisibilitySchema,
   createdAt:        z.string(),
   updatedAt:        z.string(),
   sourceConnector:  z.string().nullable(),

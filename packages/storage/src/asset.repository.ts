@@ -50,6 +50,7 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
       contentHash:      string;
       tags?:            string[];
       description?:     string | null;
+      visibility?:      "public" | "private";
       sourceConnector?:  string | null;
       generationPrompt?: string | null;
       generationMeta?:   string | null;
@@ -66,6 +67,7 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
         tags:             serializeTags(input.tags ?? []),
         description:      input.description ?? null,
         status:           "active",
+        visibility:       input.visibility ?? "public",
         createdAt:        now(),
         updatedAt:        now(),
         sourceConnector:  input.sourceConnector  ?? null,
@@ -111,6 +113,7 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
       query?: string;
       projectId?: string;
       type?: "image" | "video" | "audio" | "prompt" | "other";
+      visibility?: "public" | "private";
       limit: number;
       offset: number;
     }): { items: AssetRow[]; total: number } {
@@ -139,6 +142,9 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
       }
       if (filters.type) {
         conditions.push(eq(assets.type, filters.type));
+      }
+      if (filters.visibility) {
+        conditions.push(eq(assets.visibility, filters.visibility));
       }
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;

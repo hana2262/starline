@@ -7,16 +7,17 @@ interface Props {
 }
 
 export default function ProjectCreateModal({ onClose }: Props) {
-  const { text } = useI18n();
+  const { text, formatVisibility } = useI18n();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
   const createProject = useCreateProject();
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
     createProject.mutate(
-      { name: name.trim(), description: description.trim() || undefined },
+      { name: name.trim(), description: description.trim() || undefined, visibility },
       { onSuccess: onClose },
     );
   }
@@ -52,6 +53,19 @@ export default function ProjectCreateModal({ onClose }: Props) {
               placeholder={text.optionalDescription}
               maxLength={2000}
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {text.visibilityLabel}
+            </label>
+            <select
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as "public" | "private")}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="public">{formatVisibility("public")}</option>
+              <option value="private">{formatVisibility("private")}</option>
+            </select>
           </div>
           {createProject.isError && (
             <p className="text-red-600 text-sm">{String(createProject.error)}</p>

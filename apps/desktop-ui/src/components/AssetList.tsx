@@ -3,6 +3,7 @@ import { useI18n } from "../lib/i18n.js";
 
 interface Props {
   result: AssetListResponse;
+  onOpenAsset?: (assetId: string) => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -11,8 +12,8 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function AssetList({ result }: Props) {
-  const { text, formatAssetType } = useI18n();
+export default function AssetList({ result, onOpenAsset }: Props) {
+  const { text, formatAssetType, formatVisibility } = useI18n();
 
   if (result.items.length === 0) {
     return (
@@ -28,12 +29,28 @@ export default function AssetList({ result }: Props) {
         <article key={asset.id} className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h3 className="font-medium text-gray-900 truncate">{asset.name}</h3>
+              <button
+                onClick={() => onOpenAsset?.(asset.id)}
+                className="truncate text-left font-medium text-gray-900 hover:text-blue-600"
+              >
+                {asset.name}
+              </button>
               <p className="text-sm text-gray-500 mt-1 break-all">{asset.filePath}</p>
             </div>
-            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700 shrink-0">
-              {formatAssetType(asset.type)}
-            </span>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                {formatAssetType(asset.type)}
+              </span>
+              <span
+                className={`rounded-full px-2 py-1 text-xs font-medium ${
+                  asset.visibility === "private"
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-blue-50 text-blue-700"
+                }`}
+              >
+                {formatVisibility(asset.visibility)}
+              </span>
+            </div>
           </div>
 
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
@@ -60,6 +77,15 @@ export default function AssetList({ result }: Props) {
               ))}
             </div>
           )}
+
+          <div className="mt-4 flex justify-end">
+            <button
+              onClick={() => onOpenAsset?.(asset.id)}
+              className="text-sm font-medium text-blue-600 hover:text-blue-700"
+            >
+              {text.viewAssetDetail}
+            </button>
+          </div>
         </article>
       ))}
     </div>

@@ -32,9 +32,7 @@ export default function ProjectsPage({ apiReady, onOpenProject }: Props) {
       )}
       {projects && <ProjectList projects={projects} onOpenProject={onOpenProject} />}
 
-      {showCreate && (
-        <ProjectCreateModal onClose={() => setShowCreate(false)} />
-      )}
+      {showCreate && <ProjectCreateModal onClose={() => setShowCreate(false)} />}
     </div>
   );
 }

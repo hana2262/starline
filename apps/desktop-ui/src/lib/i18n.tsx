@@ -5,6 +5,7 @@ export type Locale = "zh-CN" | "en";
 
 const STORAGE_KEY = "starline.locale";
 type ProjectStatus = ProjectResponse["status"];
+type Visibility = ProjectResponse["visibility"];
 
 type Messages = {
   appTitle: string;
@@ -157,6 +158,23 @@ type Messages = {
   loadingProjectAssets: string;
   projectAssetsLoadError: string;
   assetStatusNoProject: string;
+  visibilityLabel: string;
+  publicVisibility: string;
+  privateVisibility: string;
+  viewAssetDetail: string;
+  assetDetailBack: string;
+  loadingAssetDetail: string;
+  assetDetailLoadFailed: string;
+  assetDetailNotFound: string;
+  fileSizeLabel: string;
+  statusLabel: string;
+  mimeTypeLabel: string;
+  contentHashLabel: string;
+  notAvailable: string;
+  loadingPromptPreview: string;
+  promptPreviewFailed: string;
+  previewUnavailableTitle: string;
+  previewUnavailableBody: (assetType: string) => string;
 };
 
 type I18nValue = {
@@ -165,10 +183,11 @@ type I18nValue = {
   text: Messages;
   formatProjectStatus: (status: ProjectStatus) => string;
   formatAssetType: (type: AssetType) => string;
+  formatVisibility: (visibility: Visibility) => string;
 };
 
 const MESSAGES: Record<Locale, Messages> = {
-  "en": {
+  en: {
     appTitle: "StarLine",
     appSubtitle: "Local-first creator workspace with retrieval-backed agent flows",
     language: "Language",
@@ -298,7 +317,8 @@ const MESSAGES: Record<Locale, Messages> = {
     usage: "Usage",
     recentLocalActivity: "Recent Local Activity",
     noAnalyticsRangeEvents: "No analytics events available in the selected range.",
-    activitySummary: (projects, assets, agent, submitted, completed) => `${projects} projects, ${assets} assets, ${agent} agent, ${submitted} submitted, ${completed} completed`,
+    activitySummary: (projects, assets, agent, submitted, completed) =>
+      `${projects} projects, ${assets} assets, ${agent} agent, ${submitted} submitted, ${completed} completed`,
     eventsCount: (count) => `${count} events`,
     generationOutcomes: "Generation Outcomes",
     completed: "Completed",
@@ -319,27 +339,44 @@ const MESSAGES: Record<Locale, Messages> = {
     loadingProjectAssets: "Loading project assets...",
     projectAssetsLoadError: "Failed to load project assets:",
     assetStatusNoProject: "No project",
+    visibilityLabel: "Visibility",
+    publicVisibility: "Public",
+    privateVisibility: "Private",
+    viewAssetDetail: "View details",
+    assetDetailBack: "Back to assets",
+    loadingAssetDetail: "Loading asset...",
+    assetDetailLoadFailed: "Failed to load asset",
+    assetDetailNotFound: "Asset not found",
+    fileSizeLabel: "File size",
+    statusLabel: "Status",
+    mimeTypeLabel: "MIME type",
+    contentHashLabel: "Content hash",
+    notAvailable: "Not available",
+    loadingPromptPreview: "Loading prompt preview...",
+    promptPreviewFailed: "Prompt preview could not be loaded from the local file path.",
+    previewUnavailableTitle: "Preview unavailable",
+    previewUnavailableBody: (assetType) => `${assetType} preview is not supported in the current MVP.`,
   },
   "zh-CN": {
     appTitle: "StarLine",
-    appSubtitle: "本地优先的创作者工作台，内置检索增强 Agent 流程",
-    language: "显示语言",
+    appSubtitle: "本地优先创作者工作台，提供基于检索增强的 Agent 协作流",
+    language: "语言",
     languageEnglish: "English",
     languageChinese: "简体中文",
     navProjects: "项目",
     navAssets: "资产",
     navConnectors: "连接器",
-    navAgent: "助手",
+    navAgent: "Agent",
     navAnalytics: "分析",
     bootCheckingTitle: "正在启动本地 API...",
-    bootCheckingBody: "桌面壳正在等待本地 StarLine 服务就绪。",
+    bootCheckingBody: "桌面端正在等待本地 StarLine 服务完成启动。",
     bootFailedTitle: "本地 API 启动失败",
     bootFailedBody: "请检查 local-api 运行日志后重试桌面应用。",
     bootFailedHint: "发布版诊断日志位于 `%LOCALAPPDATA%\\com.starline.desktop\\logs\\local-api.log`。",
     projectsTitle: "项目",
     newProject: "+ 新建项目",
     loading: "加载中...",
-    projectListEmpty: "还没有项目，先创建一个开始。",
+    projectListEmpty: "还没有项目，先创建一个开始吧。",
     projectModalTitle: "新建项目",
     name: "名称",
     description: "描述",
@@ -350,22 +387,22 @@ const MESSAGES: Record<Locale, Messages> = {
     myProject: "我的项目",
     archiveProject: "归档项目",
     archive: "归档",
-    archiveConfirm: (projectName) => `确认归档“${projectName}”？`,
+    archiveConfirm: (projectName) => `确认归档“${projectName}”吗？`,
     assetPageTitle: "资产",
-    assetPageSubtitle: "导入、浏览并搜索你的本地资产库。",
+    assetPageSubtitle: "导入、浏览并检索你的本地资产库。",
     loadingAssets: "正在加载资产...",
     assetLoadError: "加载资产失败：",
-    showingAssets: (count, total) => `显示 ${count} / ${total} 个资产`,
+    showingAssets: (count, total) => `当前显示 ${count} / ${total} 个资产`,
     pageLabel: (page, total) => `第 ${page} / ${total} 页`,
     previous: "上一页",
     next: "下一页",
     importAssetTitle: "导入资产",
-    importAssetSubtitle: "当前版本使用手动路径输入，原生文件选择器暂不在本阶段范围内。",
+    importAssetSubtitle: "当前 MVP 仍以手动输入文件路径为主，原生文件选择器暂不纳入范围。",
     filePath: "文件路径",
     type: "类型",
     project: "项目",
     noProject: "无项目",
-    nameOverride: "名称覆盖",
+    nameOverride: "自定义名称",
     optionalAssetName: "可选资产名称",
     tags: "标签",
     importAsset: "导入资产",
@@ -373,109 +410,127 @@ const MESSAGES: Record<Locale, Messages> = {
     importedAsset: (name) => `已导入资产：${name}`,
     reusedAsset: (name) => `复用已有资产：${name}`,
     search: "搜索",
-    searchPlaceholder: "按关键词搜索",
+    searchPlaceholder: "输入关键词搜索",
     allTypes: "全部类型",
     allProjects: "全部项目",
     resetFilters: "重置筛选",
-    assetEmpty: "没有找到资产。请导入文件或调整筛选条件。",
+    assetEmpty: "没有找到资产。你可以先导入文件或调整筛选条件。",
     assetGeneratedFrom: "生成来源",
     connectorsTitle: "连接器",
     connectorsSubtitle: "管理本地 provider 配置、secret 状态和实时健康检查。",
     persistence: "持久化",
     persistenceValue: "数据库配置 + 本地 secret 存储",
     loadingConnectors: "正在加载连接器...",
-    connectorsLoadError: "加载连接器失败：",
-    savedLocally: "已本地保存",
-    envFallback: "环境变量回退",
+    connectorsLoadError: "连接器加载失败：",
+    savedLocally: "已保存在本地",
+    envFallback: "环境变量兜底",
     enabled: "启用",
     apiKey: "API Key",
-    storedLocally: "已本地保存",
+    storedLocally: "已本地存储",
     notSaved: "未保存",
-    leaveBlankToKeepKey: "留空以保留当前密钥",
+    leaveBlankToKeepKey: "留空表示保留当前 key",
     enterMiniMaxKey: "输入 MiniMax API Key",
-    runtimeNote: "运行时说明",
-    runtimeNoteBody: "数据库中的 secret 优先于环境变量回退。标准读取接口不会返回明文密钥。",
+    runtimeNote: "运行说明",
+    runtimeNoteBody: "数据库中的 secret 会覆盖环境变量兜底；标准读取 API 不会返回明文 key。",
     saveMiniMax: "保存 MiniMax",
     saveStableDiffusion: "保存 Stable Diffusion",
     testConnector: "测试连接器",
-    healthyIn: (latencyMs) => `${latencyMs}ms 内通过健康检查`,
+    healthyIn: (latencyMs) => `${latencyMs}ms 内响应正常`,
     testFailed: (error) => `测试失败：${error}`,
-    minimaxSaved: "MiniMax 设置已保存。",
-    stableSaved: "Stable Diffusion 设置已保存。",
+    minimaxSaved: "MiniMax 配置已保存。",
+    stableSaved: "Stable Diffusion 配置已保存。",
     stableDiffusionTitle: "Stable Diffusion WebUI",
-    stableDiffusionBody: "用于健康检查和图像生成的本地 WebUI 地址。",
-    baseUrl: "基础地址",
+    stableDiffusionBody: "本地 WebUI 端点用于健康检查和图片生成。",
+    baseUrl: "基础 URL",
     secretState: "Secret 状态",
     notUsed: "未使用",
-    stableSecretBody: "当前 MVP 路径下，Stable Diffusion 仅保存 endpoint 配置，不需要单独 secret。",
+    stableSecretBody: "当前 MVP 路径下 Stable Diffusion 只保存 endpoint 配置，不需要单独 secret。",
     minimaxBody: "使用本地保存 API Key 的图像连接器。",
-    agentTitle: "助手",
-    agentSubtitle: "基于你的本地项目和资产库，获取检索增强建议。",
+    agentTitle: "Agent",
+    agentSubtitle: "基于你的本地项目和资产库发起检索增强式提问。",
     session: "会话",
     newSession: "新建会话",
     projectScope: "项目范围",
     allLocalAssets: "全部本地资产",
-    askAgent: "提问",
-    askAgentPlaceholder: "可以让助手改写提示词、筛选资产或给出下一步建议...",
-    running: "处理中...",
-    askAgentAction: "发送",
+    askAgent: "询问 Agent",
+    askAgentPlaceholder: "例如：改写 prompt、挑选参考资产、给出下一步建议...",
+    running: "运行中...",
+    askAgentAction: "发送给 Agent",
     loadingSession: "正在加载会话...",
     noSessionTitle: "还没有开始会话。",
-    noSessionBody: "如有需要先选择项目范围，然后发起问题，助手会把对话持久化到本地。",
-    agentRole: "助手",
+    noSessionBody: "如有需要先选择项目范围，然后提出问题，Agent 会把对话持久化到本地。",
+    agentRole: "Agent",
     youRole: "你",
     currentContext: "当前上下文",
     globalLibrary: "全局资产库",
-    globalLibraryBody: "当前会话会在所有已导入的本地资产中检索。",
+    globalLibraryBody: "当前会话可以跨全部已导入本地资产进行检索。",
     started: "开始时间",
     updated: "更新时间",
-    messages: "消息数",
+    messages: "消息",
     relatedAssets: "相关资产",
     retrievedLocalContext: "检索到的本地上下文",
-    noRelatedAssets: "当前会话还没有检索到相关资产。",
+    noRelatedAssets: "当前会话还没有检索到关联资产。",
     analyticsTitle: "分析",
-    analyticsSubtitle: "查看本地项目、资产、生成和 Agent 活动，无需向外发送遥测数据。",
-    latestEvent: "最新事件",
+    analyticsSubtitle: "查看本地项目、资产、生成和 Agent 活动，不会把遥测发送到外部。",
+    latestEvent: "最近事件",
     noEventsYet: "暂无事件",
     loadingAnalytics: "正在加载分析数据...",
-    analyticsLoadError: "加载分析数据失败。",
+    analyticsLoadError: "分析数据加载失败。",
     statProjects: "项目",
-    statProjectsBody: "本地创建的项目总数。",
+    statProjectsBody: "本地已创建的项目总数。",
     statAssets: "资产",
-    statAssetsBody: "已导入并完成索引的本地资产。",
-    statAgentQueries: "助手提问",
-    statAgentQueriesBody: "已持久化的检索增强助手请求。",
+    statAssetsBody: "已导入并建立索引的本地资产。",
+    statAgentQueries: "Agent 查询",
+    statAgentQueriesBody: "已持久化的检索增强式 Agent 请求。",
     statGenerations: "生成任务",
-    statGenerationsBody: (completed, failed, cancelled) => `${completed} 成功，${failed} 失败，${cancelled} 取消。`,
+    statGenerationsBody: (completed, failed, cancelled) => `${completed} 完成，${failed} 失败，${cancelled} 取消。`,
     usage: "使用情况",
-    recentLocalActivity: "近期本地活动",
-    noAnalyticsRangeEvents: "所选范围内没有分析事件。",
-    activitySummary: (projects, assets, agent, submitted, completed) => `${projects} 个项目，${assets} 个资产，${agent} 次助手提问，${submitted} 次提交，${completed} 次成功`,
+    recentLocalActivity: "最近本地活动",
+    noAnalyticsRangeEvents: "当前时间范围内没有分析事件。",
+    activitySummary: (projects, assets, agent, submitted, completed) =>
+      `${projects} 项目，${assets} 资产，${agent} Agent，${submitted} 提交，${completed} 完成`,
     eventsCount: (count) => `${count} 个事件`,
     generationOutcomes: "生成结果",
-    completed: "成功",
+    completed: "完成",
     failed: "失败",
     cancelled: "取消",
-    byConnector: "按连接器",
-    generationMix: "生成构成",
+    byConnector: "按连接器统计",
+    generationMix: "生成分布",
     noGenerationActivity: "还没有记录到生成活动。",
     submitted: "已提交",
     projectDetailBack: "返回项目列表",
     loadingProject: "正在加载项目...",
-    projectLoadFailed: "加载项目失败",
-    projectNotFound: "未找到项目",
+    projectLoadFailed: "项目加载失败",
+    projectNotFound: "未找到该项目",
     noDescriptionYet: "暂无描述。",
     created: "创建时间",
     projectAssets: "项目资产",
     projectAssetsBody: "通过现有 `projectId` 关联到该项目的资产。",
     loadingProjectAssets: "正在加载项目资产...",
-    projectAssetsLoadError: "加载项目资产失败：",
+    projectAssetsLoadError: "项目资产加载失败：",
     assetStatusNoProject: "无项目",
+    visibilityLabel: "可见性",
+    publicVisibility: "公开",
+    privateVisibility: "私密",
+    viewAssetDetail: "查看详情",
+    assetDetailBack: "返回资产列表",
+    loadingAssetDetail: "正在加载资产...",
+    assetDetailLoadFailed: "资产加载失败",
+    assetDetailNotFound: "未找到该资产",
+    fileSizeLabel: "文件大小",
+    statusLabel: "状态",
+    mimeTypeLabel: "MIME 类型",
+    contentHashLabel: "内容 Hash",
+    notAvailable: "暂无",
+    loadingPromptPreview: "正在加载 prompt 预览...",
+    promptPreviewFailed: "无法从本地文件路径加载 prompt 预览。",
+    previewUnavailableTitle: "暂不支持预览",
+    previewUnavailableBody: (assetType) => `当前 MVP 暂不支持 ${assetType} 内容预览。`,
   },
 };
 
 const ASSET_TYPE_LABELS: Record<Locale, Record<AssetType, string>> = {
-  "en": {
+  en: {
     image: "Image",
     video: "Video",
     audio: "Audio",
@@ -486,19 +541,30 @@ const ASSET_TYPE_LABELS: Record<Locale, Record<AssetType, string>> = {
     image: "图片",
     video: "视频",
     audio: "音频",
-    prompt: "提示词",
+    prompt: "Prompt",
     other: "其他",
   },
 };
 
 const PROJECT_STATUS_LABELS: Record<Locale, Record<ProjectStatus, string>> = {
-  "en": {
+  en: {
     active: "active",
     archived: "archived",
   },
   "zh-CN": {
     active: "进行中",
     archived: "已归档",
+  },
+};
+
+const VISIBILITY_LABELS: Record<Locale, Record<Visibility, string>> = {
+  en: {
+    public: "Public",
+    private: "Private",
+  },
+  "zh-CN": {
+    public: "公开",
+    private: "私密",
   },
 };
 
@@ -526,13 +592,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     text: MESSAGES[locale],
     formatProjectStatus: (status) => PROJECT_STATUS_LABELS[locale][status],
     formatAssetType: (type) => ASSET_TYPE_LABELS[locale][type],
+    formatVisibility: (visibility) => VISIBILITY_LABELS[locale][visibility],
   }), [locale]);
 
-  return (
-    <I18nContext.Provider value={value}>
-      {children}
-    </I18nContext.Provider>
-  );
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
 export function useI18n(): I18nValue {

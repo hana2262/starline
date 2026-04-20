@@ -10,6 +10,7 @@ function toResponse(row: {
   name: string;
   description: string | null;
   status: "active" | "archived";
+  visibility: "public" | "private";
   createdAt: string;
   updatedAt: string;
 }): ProjectResponse {
@@ -18,6 +19,7 @@ function toResponse(row: {
     name: row.name,
     description: row.description,
     status: row.status,
+    visibility: row.visibility,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -34,6 +36,7 @@ export function createProjectService(repo: ProjectRepository, eventRepo?: EventR
         projectId: row.id,
         payload: {
           status: row.status,
+          visibility: row.visibility,
         },
       });
       return toResponse(row);

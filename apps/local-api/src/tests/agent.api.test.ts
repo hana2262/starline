@@ -24,15 +24,11 @@ afterAll(async () => {
   for (const filePath of TEMP_FILES) {
     try {
       fs.unlinkSync(filePath);
-    } catch {
-      // ignore cleanup failures in temp files
-    }
+    } catch {}
   }
   try {
     fs.unlinkSync(DB_PATH);
-  } catch {
-    // ignore db cleanup failures
-  }
+  } catch {}
 });
 
 describe("Agent API", () => {
@@ -104,6 +100,138 @@ describe("Agent API", () => {
     expect(sessionBody.session.id).toBe(queryBody.session.id);
     expect(sessionBody.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(sessionBody.relatedAssets).toHaveLength(1);
+  });
+
+  it("filters private assets and private projects out of default agent retrieval", async () => {
+    const privateProjectRes = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: {
+        name: "Private Lab",
+        description: "Sensitive iteration space",
+        visibility: "private",
+      },
+    });
+    expect(privateProjectRes.statusCode).toBe(201);
+    const privateProjectId = privateProjectRes.json<{ id: string }>().id;
+
+    const privateAssetFile = createTempFile("private-notes.txt", "secret cinematic prompt notes");
+    const privateImportRes = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: {
+        filePath: privateAssetFile,
+        type: "prompt",
+        projectId: privateProjectId,
+        visibility: "private",
+        tags: ["secret", "cinematic"],
+        description: "Private prompt notes",
+      },
+    });
+    expect(privateImportRes.statusCode).toBe(201);
+
+    const publicAssetFile = createTempFile("public-brief.txt", "public skyline prompt brief");
+    const publicImportRes = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: {
+        filePath: publicAssetFile,
+        type: "prompt",
+        tags: ["skyline", "public"],
+        description: "Public prompt notes",
+      },
+    });
+    expect(publicImportRes.statusCode).toBe(201);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/agent/query",
+      payload: {
+        projectId: privateProjectId,
+        query: "Need help with secret cinematic prompt notes",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      relatedAssets: Array<{ name: string }>;
+      project: { id: string } | null;
+      assistantMessage: { content: string };
+    }>();
+    expect(body.project).toBeNull();
+    expect(body.relatedAssets.some((asset) => asset.name.includes("private-notes"))).toBe(false);
+    expect(body.assistantMessage.content).not.toContain("Private Lab");
+  });
+
+  it("allows private retrieval only for the current query when explicitly authorized", async () => {
+    const privateProjectRes = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: {
+        name: "Authorized Lab",
+        description: "Private project for temporary agent access",
+        visibility: "private",
+      },
+    });
+    expect(privateProjectRes.statusCode).toBe(201);
+    const privateProjectId = privateProjectRes.json<{ id: string }>().id;
+
+    const privateAssetFile = createTempFile("authorized-private.txt", "hidden prompt material for authorized query");
+    const privateImportRes = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: {
+        filePath: privateAssetFile,
+        type: "prompt",
+        projectId: privateProjectId,
+        visibility: "private",
+        tags: ["authorized", "hidden"],
+        description: "Hidden prompt material",
+      },
+    });
+    expect(privateImportRes.statusCode).toBe(201);
+
+    const authorizedRes = await app.inject({
+      method: "POST",
+      url: "/api/agent/query",
+      payload: {
+        projectId: privateProjectId,
+        allowPrivateForThisQuery: true,
+        query: "Use the hidden prompt material",
+      },
+    });
+
+    expect(authorizedRes.statusCode).toBe(200);
+    const authorizedBody = authorizedRes.json<{
+      relatedAssets: Array<{ name: string }>;
+      project: { id: string; name: string } | null;
+      assistantMessage: { content: string };
+    }>();
+    expect(authorizedBody.project).toMatchObject({
+      id: privateProjectId,
+      name: "Authorized Lab",
+    });
+    expect(authorizedBody.relatedAssets.some((asset) => asset.name.includes("authorized-private"))).toBe(true);
+    expect(authorizedBody.assistantMessage.content).toContain("Authorized Lab");
+
+    const defaultRes = await app.inject({
+      method: "POST",
+      url: "/api/agent/query",
+      payload: {
+        projectId: privateProjectId,
+        query: "Use the hidden prompt material",
+      },
+    });
+
+    expect(defaultRes.statusCode).toBe(200);
+    const defaultBody = defaultRes.json<{
+      relatedAssets: Array<{ name: string }>;
+      project: { id: string; name: string } | null;
+      assistantMessage: { content: string };
+    }>();
+    expect(defaultBody.project).toBeNull();
+    expect(defaultBody.relatedAssets.some((asset) => asset.name.includes("authorized-private"))).toBe(false);
+    expect(defaultBody.assistantMessage.content).not.toContain("Authorized Lab");
   });
 
   it("returns 404 when querying against an unknown project", async () => {

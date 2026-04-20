@@ -7,6 +7,7 @@ export type AgentRole = z.infer<typeof AgentRoleSchema>;
 export const AgentQuerySchema = z.object({
   sessionId: z.string().min(1).optional(),
   projectId: z.string().min(1).optional(),
+  allowPrivateForThisQuery: z.boolean().optional(),
   query: z.string().min(1).max(4000),
 });
 export type AgentQueryInput = z.infer<typeof AgentQuerySchema>;

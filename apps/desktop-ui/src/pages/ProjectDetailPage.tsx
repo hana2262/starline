@@ -1,6 +1,7 @@
 import type { ProjectResponse } from "@starline/shared";
 import { useState } from "react";
 import { useAssets } from "../hooks/useAssets.js";
+import { useUpdateProject } from "../hooks/useProjects.js";
 import AssetList from "../components/AssetList.js";
 import { useI18n } from "../lib/i18n.js";
 
@@ -11,11 +12,13 @@ interface Props {
   isError: boolean;
   error: unknown;
   onBack: () => void;
+  onOpenAsset?: (assetId: string) => void;
 }
 
 export default function ProjectDetailPage(props: Props) {
-  const { text, formatProjectStatus } = useI18n();
+  const { text, formatProjectStatus, formatVisibility } = useI18n();
   const [page, setPage] = useState(0);
+  const updateProject = useUpdateProject();
   const pageSize = 5;
   const projectAssets = useAssets(
     {
@@ -77,6 +80,29 @@ export default function ProjectDetailPage(props: Props) {
               </span>
             </div>
 
+            <div className="mt-4 grid gap-4 sm:grid-cols-[minmax(0,1fr)_16rem]">
+              <div className="rounded-lg bg-gray-50 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{text.visibilityLabel}</p>
+                <p className="mt-1 text-sm text-gray-900">{formatVisibility(props.project.visibility)}</p>
+              </div>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-gray-700">{text.visibilityLabel}</span>
+                <select
+                  value={props.project.visibility}
+                  onChange={(event) => {
+                    updateProject.mutate({
+                      id: props.project!.id,
+                      input: { visibility: event.target.value as "public" | "private" },
+                    });
+                  }}
+                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="public">{formatVisibility("public")}</option>
+                  <option value="private">{formatVisibility("private")}</option>
+                </select>
+              </label>
+            </div>
+
             <dl className="mt-6 grid gap-4 sm:grid-cols-2 text-sm">
               <div>
                 <dt className="text-gray-500">{text.created}</dt>
@@ -111,7 +137,7 @@ export default function ProjectDetailPage(props: Props) {
                     </span>
                   </div>
 
-                  <AssetList result={projectAssets.data} />
+                  <AssetList result={projectAssets.data} onOpenAsset={props.onOpenAsset} />
 
                   <div className="flex justify-end gap-2">
                     <button

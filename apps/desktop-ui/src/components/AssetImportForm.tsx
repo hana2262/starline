@@ -10,13 +10,14 @@ interface Props {
 const ASSET_TYPES: Array<AssetType> = ["image", "video", "audio", "prompt", "other"];
 
 export default function AssetImportForm({ projects }: Props) {
-  const { text, formatAssetType } = useI18n();
+  const { text, formatAssetType, formatVisibility } = useI18n();
   const importAsset = useImportAsset();
   const [filePath, setFilePath] = useState("");
   const [name, setName] = useState("");
   const [type, setType] = useState<AssetType>("other");
   const [projectId, setProjectId] = useState("");
   const [tags, setTags] = useState("");
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
 
   const feedback = useMemo(() => {
     if (!importAsset.data) return null;
@@ -32,6 +33,7 @@ export default function AssetImportForm({ projects }: Props) {
       type,
       name: name.trim() || undefined,
       projectId: projectId || undefined,
+      visibility,
       tags: tags
         .split(",")
         .map((value) => value.trim())
@@ -59,7 +61,7 @@ export default function AssetImportForm({ projects }: Props) {
           />
         </label>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <label className="block">
             <span className="block text-sm font-medium text-gray-700 mb-1">{text.type}</span>
             <select
@@ -99,6 +101,18 @@ export default function AssetImportForm({ projects }: Props) {
               placeholder={text.optionalAssetName}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+          </label>
+
+          <label className="block">
+            <span className="block text-sm font-medium text-gray-700 mb-1">{text.visibilityLabel}</span>
+            <select
+              value={visibility}
+              onChange={(event) => setVisibility(event.target.value as "public" | "private")}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="public">{formatVisibility("public")}</option>
+              <option value="private">{formatVisibility("private")}</option>
+            </select>
           </label>
         </div>
 

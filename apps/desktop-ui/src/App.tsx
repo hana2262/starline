@@ -2,26 +2,32 @@ import { useEffect, useMemo, useState } from "react";
 import ProjectsPage from "./pages/ProjectsPage.js";
 import AssetsPage from "./pages/AssetsPage.js";
 import ProjectDetailPage from "./pages/ProjectDetailPage.js";
+import AssetDetailPage from "./pages/AssetDetailPage.js";
 import ConnectorsPage from "./pages/ConnectorsPage.js";
 import AgentPage from "./pages/AgentPage.js";
 import AnalyticsPage from "./pages/AnalyticsPage.js";
 import AppNav from "./components/AppNav.js";
 import { useProjects } from "./hooks/useProjects.js";
 import { useProject } from "./hooks/useProject.js";
+import { useAsset } from "./hooks/useAsset.js";
 import { useI18n } from "./lib/i18n.js";
 import { HEALTH_URL } from "./lib/runtime.js";
 
-type RootView = "projects" | "assets" | "connectors" | "agent" | "analytics" | "project-detail";
+type RootView = "projects" | "assets" | "connectors" | "agent" | "analytics" | "project-detail" | "asset-detail";
 type BootStatus = "checking" | "ready" | "failed";
+type AssetBackView = "assets" | "project-detail";
 
 export default function App() {
   const { locale, setLocale, text } = useI18n();
   const [view, setView] = useState<RootView>("projects");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [assetBackView, setAssetBackView] = useState<AssetBackView>("assets");
   const [bootStatus, setBootStatus] = useState<BootStatus>("checking");
   const apiReady = bootStatus === "ready";
   const projects = useProjects(apiReady);
   const selectedProject = useProject(selectedProjectId, apiReady);
+  const selectedAsset = useAsset(selectedAssetId, apiReady);
 
   const activeNavView = useMemo(() => {
     if (view === "assets") return "assets";
@@ -61,6 +67,12 @@ export default function App() {
     setView("project-detail");
   }
 
+  function openAsset(assetId: string, backView: AssetBackView = "assets") {
+    setSelectedAssetId(assetId);
+    setAssetBackView(backView);
+    setView("asset-detail");
+  }
+
   function renderCurrentView() {
     if (bootStatus === "checking") {
       return (
@@ -88,7 +100,7 @@ export default function App() {
     }
 
     if (view === "assets") {
-      return <AssetsPage apiReady={apiReady} projects={projects.data ?? []} />;
+      return <AssetsPage apiReady={apiReady} projects={projects.data ?? []} onOpenAsset={(assetId) => openAsset(assetId, "assets")} />;
     }
 
     if (view === "connectors") {
@@ -112,6 +124,20 @@ export default function App() {
           isError={selectedProject.isError}
           error={selectedProject.error}
           onBack={() => setView("projects")}
+          onOpenAsset={(assetId) => openAsset(assetId, "project-detail")}
+        />
+      );
+    }
+
+    if (view === "asset-detail") {
+      return (
+        <AssetDetailPage
+          asset={selectedAsset.data}
+          projects={projects.data ?? []}
+          isLoading={selectedAsset.isLoading}
+          isError={selectedAsset.isError}
+          error={selectedAsset.error}
+          onBack={() => setView(assetBackView)}
         />
       );
     }

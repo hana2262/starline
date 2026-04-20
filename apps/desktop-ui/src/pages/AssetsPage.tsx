@@ -9,11 +9,12 @@ import { useI18n } from "../lib/i18n.js";
 interface Props {
   apiReady: boolean;
   projects: ProjectResponse[];
+  onOpenAsset?: (assetId: string) => void;
 }
 
 const PAGE_SIZE = 10;
 
-export default function AssetsPage({ apiReady, projects }: Props) {
+export default function AssetsPage({ apiReady, projects, onOpenAsset }: Props) {
   const { text } = useI18n();
   const [query, setQuery] = useState("");
   const [selectedType, setSelectedType] = useState<AssetType | "">("");
@@ -89,7 +90,7 @@ export default function AssetsPage({ apiReady, projects }: Props) {
             </span>
           </div>
 
-          <AssetList result={result.data} />
+          <AssetList result={result.data} onOpenAsset={onOpenAsset} />
 
           <div className="flex justify-end gap-2">
             <button

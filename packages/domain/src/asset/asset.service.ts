@@ -36,6 +36,7 @@ function toResponse(row: {
   tags:             string[];
   description:      string | null;
   status:           "active" | "archived";
+  visibility:       "public" | "private";
   createdAt:        string;
   updatedAt:        string;
   sourceConnector?:  string | null;
@@ -54,6 +55,7 @@ function toResponse(row: {
     tags:             row.tags,
     description:      row.description,
     status:           row.status,
+    visibility:       row.visibility,
     createdAt:        row.createdAt,
     updatedAt:        row.updatedAt,
     sourceConnector:  row.sourceConnector  ?? null,
@@ -119,6 +121,7 @@ export function createAssetService(repo: AssetRepository, computeHash: ComputeHa
           contentHash: hash,
           tags:        input.tags ?? [],
           description: input.description ?? null,
+          visibility:  input.visibility ?? "public",
         });
         eventRepo?.create({
           eventType: "asset.imported",
@@ -130,6 +133,7 @@ export function createAssetService(repo: AssetRepository, computeHash: ComputeHa
             fileSize: newAsset.fileSize,
             mimeType: newAsset.mimeType,
             source: "manual_import",
+            visibility: newAsset.visibility,
           },
         });
         return { created: true, asset: toResponse(newAsset) };
