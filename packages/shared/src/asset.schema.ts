@@ -16,9 +16,18 @@ export const ImportAssetSchema = z.object({
 
 export type ImportAssetInput = z.infer<typeof ImportAssetSchema>;
 
+export const ImportAssetFolderSchema = z.object({
+  folderPath:  z.string().min(1),
+  projectId:   z.string().min(1).optional(),
+  visibility:  VisibilitySchema.optional(),
+});
+
+export type ImportAssetFolderInput = z.infer<typeof ImportAssetFolderSchema>;
+
 export const UpdateAssetSchema = z.object({
+  projectId: z.string().min(1).nullable().optional(),
   visibility: VisibilitySchema.optional(),
-}).refine((input) => input.visibility !== undefined, {
+}).refine((input) => input.visibility !== undefined || input.projectId !== undefined, {
   message: "At least one field must be provided",
 });
 
@@ -52,3 +61,19 @@ export const ImportAssetResultSchema = z.object({
 });
 
 export type ImportAssetResult = z.infer<typeof ImportAssetResultSchema>;
+
+export const ImportAssetFolderResultSchema = z.object({
+  importedCount: z.number().int().nonnegative(),
+  reusedCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  items: z.array(ImportAssetResultSchema),
+  errors: z.array(
+    z.object({
+      filePath: z.string(),
+      code: z.enum(["FILE_NOT_FOUND", "IO_ERROR", "PATH_CONFLICT"]),
+      message: z.string(),
+    }),
+  ),
+});
+
+export type ImportAssetFolderResult = z.infer<typeof ImportAssetFolderResultSchema>;

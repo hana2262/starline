@@ -2,7 +2,7 @@ import { createReadStream, existsSync, statSync } from "fs";
 import type { FastifyInstance } from "fastify";
 import type { AssetService } from "@starline/domain";
 import { AssetImportError } from "@starline/domain";
-import { ImportAssetSchema, ListAssetsQuerySchema, UpdateAssetSchema } from "@starline/shared";
+import { ImportAssetFolderSchema, ImportAssetSchema, ListAssetsQuerySchema, UpdateAssetSchema } from "@starline/shared";
 
 export function registerAssetRoutes(app: FastifyInstance, assetService: AssetService) {
   app.post("/api/assets/import", async (req, reply) => {
@@ -10,6 +10,12 @@ export function registerAssetRoutes(app: FastifyInstance, assetService: AssetSer
     const result = await assetService.import(input);
     const status = result.created ? 201 : 200;
     return reply.code(status).send(result);
+  });
+
+  app.post("/api/assets/import-folder", async (req, reply) => {
+    const input = ImportAssetFolderSchema.parse(req.body);
+    const result = await assetService.importFolder(input);
+    return reply.code(200).send(result);
   });
 
   app.get("/api/assets", async (req, reply) => {

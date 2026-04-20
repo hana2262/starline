@@ -187,6 +187,7 @@ type Messages = {
   assetDetailMetadataTitle?: string;
   assetDetailSourceTitle?: string;
   assetVisibilityHelp?: string;
+  assetProjectHelp?: string;
   saving?: string;
   saveChanges?: string;
   assetVisibilitySaved?: string;

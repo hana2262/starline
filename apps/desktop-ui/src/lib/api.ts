@@ -6,6 +6,8 @@ import type {
   AssetListResponse,
   ImportAssetInput,
   ImportAssetResult,
+  ImportAssetFolderInput,
+  ImportAssetFolderResult,
   ListAssetsQuery,
   UpdateAssetInput,
   ConnectorConfigListResult,
@@ -82,6 +84,11 @@ export const assetsApi = {
   contentUrl: (id: string) => `${BASE}/assets/${id}/content`,
   import: (input: ImportAssetInput) =>
     request<ImportAssetResult>("/assets/import", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  importFolder: (input: ImportAssetFolderInput) =>
+    request<ImportAssetFolderResult>("/assets/import-folder", {
       method: "POST",
       body: JSON.stringify(input),
     }),

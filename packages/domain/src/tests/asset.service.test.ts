@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createAssetService, AssetImportError } from "../asset/asset.service.js";
 import type { AssetRepository, AssetRow } from "@starline/storage";
 import type { ListAssetsQuery } from "@starline/shared";
+import path from "path";
+import os from "os";
+import fs from "fs";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +37,7 @@ function makeRepo(overrides: Partial<AssetRepository> = {}): AssetRepository {
     getById:         vi.fn(),
     getByHash:       vi.fn(),
     getByFilePath:   vi.fn(),
+    updateProject:   vi.fn(),
     updateVisibility: vi.fn(),
     clearProject:    vi.fn(),
     listByProject:   vi.fn(),
@@ -192,5 +196,73 @@ describe("assetService.list", () => {
     service.list(filters);
 
     expect(repoList).toHaveBeenCalledWith(filters);
+  });
+});
+
+describe("assetService.update", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("updates asset project association", () => {
+    const existing = makeAssetRow();
+    const updated = makeAssetRow({ projectId: "proj-1" });
+    const repo = makeRepo({
+      getById: vi.fn().mockReturnValue(existing),
+      updateProject: vi.fn().mockReturnValue(updated),
+    });
+
+    const service = createAssetService(repo, vi.fn());
+    const result = service.update("asset-1", { projectId: "proj-1" });
+
+    expect(repo.updateProject).toHaveBeenCalledWith("asset-1", "proj-1");
+    expect(result?.projectId).toBe("proj-1");
+  });
+});
+
+describe("assetService.importFolder", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStatSync.mockReturnValue({ isDirectory: () => true } as ReturnType<typeof statSync>);
+  });
+
+  it("imports every file in a folder and infers asset types", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "starline-folder-import-"));
+    const imagePath = path.join(tempDir, "cover.png");
+    const promptPath = path.join(tempDir, "notes.txt");
+    fs.writeFileSync(imagePath, "fake-png");
+    fs.writeFileSync(promptPath, "prompt");
+
+    const createdRows = [
+      makeAssetRow({ id: "asset-image", filePath: imagePath, name: "cover.png", type: "image", mimeType: "image/png" }),
+      makeAssetRow({ id: "asset-prompt", filePath: promptPath, name: "notes.txt", type: "prompt", mimeType: "text/plain" }),
+    ];
+
+    const repo = makeRepo({
+      getByHash: vi.fn().mockReturnValue(undefined),
+      create: vi
+        .fn()
+        .mockReturnValueOnce(createdRows[0])
+        .mockReturnValueOnce(createdRows[1]),
+    });
+    const computeHash = vi
+      .fn()
+      .mockResolvedValueOnce({ hash: "img-h", size: 7, mimeType: "image/png" })
+      .mockResolvedValueOnce({ hash: "txt-h", size: 6, mimeType: "text/plain" });
+
+    const service = createAssetService(repo, computeHash);
+    const result = await service.importFolder({ folderPath: tempDir, projectId: "proj-1", visibility: "private" });
+
+    expect(result.importedCount).toBe(2);
+    expect(result.reusedCount).toBe(0);
+    expect(result.failedCount).toBe(0);
+    expect(repo.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ filePath: imagePath, name: "cover.png", type: "image", projectId: "proj-1", visibility: "private" }),
+    );
+    expect(repo.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ filePath: promptPath, name: "notes.txt", type: "prompt", projectId: "proj-1", visibility: "private" }),
+    );
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 });

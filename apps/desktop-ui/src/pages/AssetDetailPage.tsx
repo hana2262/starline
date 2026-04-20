@@ -142,14 +142,16 @@ function AssetPreview({ asset }: { asset: AssetResponse }) {
 }
 
 export default function AssetDetailPage({ asset, projects, isLoading, isError, error, onBack }: Props) {
-  const { text, formatAssetType, formatVisibility } = useI18n();
+  const { locale, text, formatAssetType, formatVisibility } = useI18n();
   const updateAsset = useUpdateAsset();
   const [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [projectId, setProjectId] = useState("");
   const [saveNotice, setSaveNotice] = useState<"idle" | "saved" | "failed">("idle");
 
   useEffect(() => {
     if (asset) {
       setVisibility(asset.visibility);
+      setProjectId(asset.projectId ?? "");
       setSaveNotice("idle");
     }
   }, [asset]);
@@ -165,6 +167,13 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
   }, [asset?.generationMeta]);
 
   const visibilityDirty = asset ? visibility !== asset.visibility : false;
+  const projectDirty = asset ? projectId !== (asset.projectId ?? "") : false;
+  const saveDirty = visibilityDirty || projectDirty;
+  const assetAssociationHelp =
+    text.assetProjectHelp ??
+    (locale === "zh-CN"
+      ? "将资产关联到某个项目，或清空项目关联。"
+      : "Associate this asset with a project, or clear the project link.");
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -251,6 +260,29 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
 
               <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
                 <label className="block">
+                  <span className="block text-sm font-medium text-gray-700">{text.project}</span>
+                  <select
+                    value={projectId}
+                    onChange={(event) => {
+                      setProjectId(event.target.value);
+                      setSaveNotice("idle");
+                    }}
+                    className="mt-2 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={updateAsset.isPending}
+                  >
+                    <option value="">{text.noProject}</option>
+                    {projects.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="mt-2 text-xs text-gray-500">{assetAssociationHelp}</p>
+              </div>
+
+              <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <label className="block">
                   <span className="block text-sm font-medium text-gray-700">{text.visibilityLabel}</span>
                   <select
                     value={visibility}
@@ -272,23 +304,35 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
                   <button
                     onClick={() => {
                       updateAsset.mutate(
-                        { id: asset.id, input: { visibility } },
+                        {
+                          id: asset.id,
+                          input: {
+                            visibility,
+                            projectId: projectId || null,
+                          },
+                        },
                         {
                           onSuccess: () => setSaveNotice("saved"),
                           onError: () => setSaveNotice("failed"),
                         },
                       );
                     }}
-                    disabled={!visibilityDirty || updateAsset.isPending}
+                    disabled={!saveDirty || updateAsset.isPending}
                     className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
                   >
-                    {updateAsset.isPending ? (text.saving ?? "Saving...") : (text.saveChanges ?? "Save changes")}
+                    {updateAsset.isPending
+                      ? (text.saving ?? (locale === "zh-CN" ? "保存中..." : "Saving..."))
+                      : (text.saveChanges ?? (locale === "zh-CN" ? "保存更改" : "Save changes"))}
                   </button>
                   {saveNotice === "saved" && (
-                    <span className="text-sm text-green-700">{text.assetVisibilitySaved ?? "Asset visibility saved."}</span>
+                    <span className="text-sm text-green-700">
+                      {text.assetVisibilitySaved ?? (locale === "zh-CN" ? "资产设置已保存。" : "Asset settings saved.")}
+                    </span>
                   )}
                   {saveNotice === "failed" && (
-                    <span className="text-sm text-red-600">{text.assetVisibilitySaveFailed ?? "Failed to save asset visibility."}</span>
+                    <span className="text-sm text-red-600">
+                      {text.assetVisibilitySaveFailed ?? (locale === "zh-CN" ? "保存资产设置失败。" : "Failed to save asset settings.")}
+                    </span>
                   )}
                 </div>
               </div>

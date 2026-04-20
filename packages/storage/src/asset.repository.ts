@@ -119,6 +119,20 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
       return row ? toAssetRow(row) : undefined;
     },
 
+    updateProject(id: string, projectId: string | null): AssetRow | undefined {
+      db
+        .update(assets)
+        .set({
+          projectId,
+          updatedAt: now(),
+        })
+        .where(eq(assets.id, id))
+        .run();
+
+      const row = db.select().from(assets).where(eq(assets.id, id)).get();
+      return row ? toAssetRow(row) : undefined;
+    },
+
     clearProject(projectId: string): number {
       const result = db
         .update(assets)

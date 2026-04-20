@@ -4,6 +4,7 @@ import { useI18n } from "../lib/i18n.js";
 interface Props {
   result: AssetListResponse;
   onOpenAsset?: (assetId: string) => void;
+  projectNameById?: Record<string, string>;
 }
 
 function formatFileSize(bytes: number): string {
@@ -12,7 +13,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function AssetList({ result, onOpenAsset }: Props) {
+export default function AssetList({ result, onOpenAsset, projectNameById = {} }: Props) {
   const { text, formatAssetType, formatVisibility } = useI18n();
 
   if (result.items.length === 0) {
@@ -58,7 +59,7 @@ export default function AssetList({ result, onOpenAsset }: Props) {
               {formatFileSize(asset.fileSize)}
             </span>
             <span className="px-2 py-1 rounded bg-gray-100">
-              {asset.projectId ?? text.assetStatusNoProject}
+              {asset.projectId ? (projectNameById[asset.projectId] ?? asset.projectId) : text.assetStatusNoProject}
             </span>
             <span className="px-2 py-1 rounded bg-gray-100">{asset.status}</span>
             {asset.sourceConnector && (

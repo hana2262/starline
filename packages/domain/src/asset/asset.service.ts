@@ -1,9 +1,11 @@
-import { statSync } from "fs";
-import { basename } from "path";
+import { readdirSync, statSync } from "fs";
+import { basename, extname, join } from "path";
 import { randomUUID } from "crypto";
 import type { AssetRepository, EventRepository } from "@starline/storage";
 import type {
   ImportAssetInput,
+  ImportAssetFolderInput,
+  ImportAssetFolderResult,
   ImportAssetResult,
   AssetResponse,
   ListAssetsQuery,
@@ -24,6 +26,34 @@ export class AssetImportError extends Error {
 }
 
 type ComputeHashFn = typeof computeFileHash;
+
+function inferAssetType(filePath: string): "image" | "video" | "audio" | "prompt" | "other" {
+  const ext = extname(filePath).toLowerCase();
+  if ([".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(ext)) return "image";
+  if ([".mp4", ".webm"].includes(ext)) return "video";
+  if ([".mp3", ".wav", ".ogg"].includes(ext)) return "audio";
+  if ([".txt", ".md", ".json"].includes(ext)) return "prompt";
+  return "other";
+}
+
+function listFilesRecursive(folderPath: string): string[] {
+  const entries = readdirSync(folderPath, { withFileTypes: true });
+  const files: string[] = [];
+
+  for (const entry of entries) {
+    const entryPath = join(folderPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listFilesRecursive(entryPath));
+      continue;
+    }
+
+    if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  }
+
+  return files;
+}
 
 function toResponse(row: {
   id:               string;
@@ -157,6 +187,65 @@ export function createAssetService(repo: AssetRepository, computeHash: ComputeHa
       }
     },
 
+    async importFolder(input: ImportAssetFolderInput): Promise<ImportAssetFolderResult> {
+      try {
+        const stats = statSync(input.folderPath);
+        if (!stats.isDirectory()) {
+          throw new AssetImportError(`Folder not found: ${input.folderPath}`, "FILE_NOT_FOUND");
+        }
+      } catch (err) {
+        if (err instanceof AssetImportError) {
+          throw err;
+        }
+        const e = err as NodeJS.ErrnoException;
+        if (e.code === "ENOENT") {
+          throw new AssetImportError(`Folder not found: ${input.folderPath}`, "FILE_NOT_FOUND");
+        }
+        throw new AssetImportError(e.message, "IO_ERROR");
+      }
+
+      const filePaths = listFilesRecursive(input.folderPath);
+      const items: ImportAssetResult[] = [];
+      const errors: Array<{ filePath: string; code: "FILE_NOT_FOUND" | "IO_ERROR" | "PATH_CONFLICT"; message: string }> = [];
+      let importedCount = 0;
+      let reusedCount = 0;
+
+      for (const filePath of filePaths) {
+        try {
+          const result = await this.import({
+            filePath,
+            type: inferAssetType(filePath),
+            projectId: input.projectId,
+            visibility: input.visibility,
+          });
+          items.push(result);
+          if (result.created) {
+            importedCount += 1;
+          } else {
+            reusedCount += 1;
+          }
+        } catch (err) {
+          if (err instanceof AssetImportError) {
+            errors.push({
+              filePath,
+              code: err.code,
+              message: err.message,
+            });
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      return {
+        importedCount,
+        reusedCount,
+        failedCount: errors.length,
+        items,
+        errors,
+      };
+    },
+
     getById(id: string): AssetResponse | null {
       const row = repo.getById(id);
       return row ? toResponse(row) : null;
@@ -167,6 +256,11 @@ export function createAssetService(repo: AssetRepository, computeHash: ComputeHa
       if (!existing) return null;
 
       let row = existing;
+      if (input.projectId !== undefined) {
+        const updated = repo.updateProject(id, input.projectId);
+        if (!updated) return null;
+        row = updated;
+      }
       if (input.visibility !== undefined) {
         const updated = repo.updateVisibility(id, input.visibility);
         if (!updated) return null;

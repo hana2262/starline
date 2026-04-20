@@ -36,6 +36,10 @@ export default function AssetsPage({ apiReady, projects, onOpenAsset }: Props) {
     if (!result.data) return 1;
     return Math.max(1, Math.ceil(result.data.total / PAGE_SIZE));
   }, [result.data]);
+  const projectNameById = useMemo(
+    () => Object.fromEntries(projects.map((project) => [project.id, project.name])),
+    [projects],
+  );
 
   function resetFilters() {
     setQuery("");
@@ -90,7 +94,7 @@ export default function AssetsPage({ apiReady, projects, onOpenAsset }: Props) {
             </span>
           </div>
 
-          <AssetList result={result.data} onOpenAsset={onOpenAsset} />
+          <AssetList result={result.data} onOpenAsset={onOpenAsset} projectNameById={projectNameById} />
 
           <div className="flex justify-end gap-2">
             <button
