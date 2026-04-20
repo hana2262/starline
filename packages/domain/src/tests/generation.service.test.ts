@@ -99,6 +99,7 @@ function makeRepo(overrides: Partial<AssetRepository> = {}): AssetRepository {
     getByHash: vi.fn(),
     getByFilePath: vi.fn(),
     updateVisibility: vi.fn(),
+    clearProject: vi.fn(),
     listByProject: vi.fn(),
     list: vi.fn(),
     ...overrides,

@@ -38,6 +38,16 @@ type Messages = {
   archiveProject: string;
   archive: string;
   archiveConfirm: (projectName: string) => string;
+  projectsManageHint?: string;
+  cancelSelection?: string;
+  selectProjects?: string;
+  projectFilterLabel?: string;
+  allStatuses?: string;
+  selectedProjectsCount?: string;
+  deleteProjectsConfirm?: string;
+  deletingProjects?: string;
+  deleteSelectedProjects?: string;
+  projectStatusLabel?: string;
   assetPageTitle: string;
   assetPageSubtitle: string;
   loadingAssets: string;
@@ -234,6 +244,16 @@ const MESSAGES: Record<Locale, Messages> = {
     archiveProject: "Archive project",
     archive: "Archive",
     archiveConfirm: (projectName) => `Archive "${projectName}"?`,
+    projectsManageHint: "Review active and archived projects, edit details, or clean up old work.",
+    cancelSelection: "Cancel selection",
+    selectProjects: "Select projects",
+    projectFilterLabel: "Status filter",
+    allStatuses: "All",
+    selectedProjectsCount: "{count} selected",
+    deleteProjectsConfirm: "Delete {count} selected projects? This cannot be undone.",
+    deletingProjects: "Deleting...",
+    deleteSelectedProjects: "Delete selected",
+    projectStatusLabel: "Project status",
     assetPageTitle: "Assets",
     assetPageSubtitle: "Import, browse, and search your local asset library.",
     loadingAssets: "Loading assets...",

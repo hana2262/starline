@@ -50,6 +50,13 @@ export const projectsApi = {
     }),
   archive: (id: string) =>
     request<ProjectResponse>(`/projects/${id}/archive`, { method: "POST" }),
+  remove: (id: string) =>
+    fetch(`${BASE}/projects/${id}`, { method: "DELETE" }).then(async (res) => {
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`API ${res.status}: ${body}`);
+      }
+    }),
 };
 
 function toQueryString(query: ListAssetsQuery): string {

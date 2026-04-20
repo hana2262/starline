@@ -119,6 +119,19 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
       return row ? toAssetRow(row) : undefined;
     },
 
+    clearProject(projectId: string): number {
+      const result = db
+        .update(assets)
+        .set({
+          projectId: null,
+          updatedAt: now(),
+        })
+        .where(eq(assets.projectId, projectId))
+        .run();
+
+      return result.changes;
+    },
+
     listByProject(projectId: string): AssetRow[] {
       return db.select().from(assets).where(eq(assets.projectId, projectId)).all().map(toAssetRow);
     },

@@ -38,4 +38,10 @@ export function registerProjectRoutes(
     if (!project) return reply.code(404).send({ error: "Not found" });
     return reply.send(project);
   });
+
+  app.delete<{ Params: { id: string } }>("/api/projects/:id", async (req, reply) => {
+    const deleted = projectService.delete(req.params.id);
+    if (!deleted) return reply.code(404).send({ error: "Not found" });
+    return reply.code(204).send();
+  });
 }

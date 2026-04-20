@@ -41,6 +41,7 @@ export function createProjectRepository(db: Db) {
       input: {
         name?: string;
         description?: string | null;
+        status?: "active" | "archived";
         visibility?: "public" | "private";
       },
     ): Project | undefined {
@@ -62,6 +63,11 @@ export function createProjectRepository(db: Db) {
         .where(eq(projects.id, id))
         .run();
       return this.getById(id);
+    },
+
+    delete(id: string): boolean {
+      const result = db.delete(projects).where(eq(projects.id, id)).run();
+      return result.changes > 0;
     },
   };
 }

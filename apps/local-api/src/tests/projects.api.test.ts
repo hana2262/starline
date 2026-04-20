@@ -58,11 +58,13 @@ describe("Project API", () => {
     const res = await app.inject({
       method: "PATCH",
       url: `/api/projects/${projectId}`,
-      payload: { name: "Renamed", visibility: "public" },
+      payload: { name: "Renamed", description: null, status: "archived", visibility: "public" },
     });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ name: string; visibility: string }>();
+    const body = res.json<{ name: string; description: string | null; status: string; visibility: string }>();
     expect(body.name).toBe("Renamed");
+    expect(body.description).toBeNull();
+    expect(body.status).toBe("archived");
     expect(body.visibility).toBe("public");
   });
 
@@ -73,6 +75,24 @@ describe("Project API", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ status: string }>().status).toBe("archived");
+  });
+
+  it("DELETE /api/projects/:id removes project", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "Delete Me" },
+    });
+    const deleteId = createRes.json<{ id: string }>().id;
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/projects/${deleteId}`,
+    });
+    expect(res.statusCode).toBe(204);
+
+    const getRes = await app.inject({ method: "GET", url: `/api/projects/${deleteId}` });
+    expect(getRes.statusCode).toBe(404);
   });
 
   it("GET /api/projects/:id returns 404 for missing", async () => {

@@ -1,19 +1,29 @@
 import type { ProjectResponse } from "@starline/shared";
-import { useArchiveProject } from "../hooks/useProjects.js";
 import { useI18n } from "../lib/i18n.js";
 
 interface Props {
   project: ProjectResponse;
   onOpen?: (projectId: string) => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelected?: (projectId: string, checked: boolean) => void;
 }
 
-export default function ProjectCard({ project, onOpen }: Props) {
-  const archive = useArchiveProject();
-  const { text, formatProjectStatus, formatVisibility } = useI18n();
+export default function ProjectCard({ project, onOpen, selectable = false, selected = false, onToggleSelected }: Props) {
+  const { formatProjectStatus, formatVisibility } = useI18n();
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 flex items-start justify-between hover:shadow-sm transition-shadow">
-      <div>
+      <div className="flex items-start gap-3">
+        {selectable && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={(event) => onToggleSelected?.(project.id, event.target.checked)}
+            className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+        )}
+        <div>
         <button
           onClick={() => onOpen?.(project.id)}
           className="font-medium text-gray-900 hover:text-blue-600 text-left"
@@ -45,20 +55,8 @@ export default function ProjectCard({ project, onOpen }: Props) {
             {formatVisibility(project.visibility)}
           </span>
         </div>
+        </div>
       </div>
-      {project.status === "active" && (
-        <button
-          onClick={() => {
-            if (confirm(text.archiveConfirm(project.name))) {
-              archive.mutate(project.id);
-            }
-          }}
-          className="text-xs text-gray-400 hover:text-red-500 ml-4 shrink-0"
-          title={text.archiveProject}
-        >
-          {text.archive}
-        </button>
-      )}
     </div>
   );
 }

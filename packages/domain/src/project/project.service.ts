@@ -1,4 +1,4 @@
-import type { EventRepository, ProjectRepository } from "@starline/storage";
+import type { AssetRepository, EventRepository, ProjectRepository } from "@starline/storage";
 import type {
   CreateProjectInput,
   UpdateProjectInput,
@@ -25,7 +25,11 @@ function toResponse(row: {
   };
 }
 
-export function createProjectService(repo: ProjectRepository, eventRepo?: EventRepository) {
+export function createProjectService(
+  repo: ProjectRepository,
+  assetRepo?: AssetRepository,
+  eventRepo?: EventRepository,
+) {
   return {
     create(input: CreateProjectInput): ProjectResponse {
       const row = repo.create(input);
@@ -59,6 +63,14 @@ export function createProjectService(repo: ProjectRepository, eventRepo?: EventR
     archive(id: string): ProjectResponse | null {
       const row = repo.archive(id);
       return row ? toResponse(row) : null;
+    },
+
+    delete(id: string): boolean {
+      const existing = repo.getById(id);
+      if (!existing) return false;
+
+      assetRepo?.clearProject(id);
+      return repo.delete(id);
     },
   };
 }

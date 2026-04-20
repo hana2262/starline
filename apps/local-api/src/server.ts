@@ -61,11 +61,10 @@ export function buildServer(
   const db     = getDb(dbPath);
   const sqlite = getSqlite();
 
+  const assetRepo      = createAssetRepository(db, sqlite);
   const projectRepo = createProjectRepository(db);
   const eventRepo = createEventRepository(db);
-  const projectService = createProjectService(projectRepo, eventRepo);
-
-  const assetRepo      = createAssetRepository(db, sqlite);
+  const projectService = createProjectService(projectRepo, assetRepo, eventRepo);
   const assetService   = createAssetService(assetRepo, computeFileHash, eventRepo);
   const generationRepo = createGenerationRepository(db);
   const connectorConfigRepo = createConnectorConfigRepository(db);
