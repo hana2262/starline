@@ -404,6 +404,7 @@ export function createGenerationService(
         contentHash: hash,
         tags: inputTags,
         description: null,
+        origin: "generated",
         sourceConnector: beforePersist.connectorId,
         generationPrompt: beforePersist.prompt,
         generationMeta: JSON.stringify(output.meta),

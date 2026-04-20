@@ -16,6 +16,7 @@ import { HEALTH_URL } from "./lib/runtime.js";
 type RootView = "projects" | "assets" | "connectors" | "agent" | "analytics" | "project-detail" | "asset-detail";
 type BootStatus = "checking" | "ready" | "failed";
 type AssetBackView = "assets" | "project-detail";
+type AssetBrowserStatus = "active" | "trashed" | "all";
 
 export default function App() {
   const { locale, setLocale, text } = useI18n();
@@ -23,6 +24,7 @@ export default function App() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [assetBackView, setAssetBackView] = useState<AssetBackView>("assets");
+  const [assetBrowserStatus, setAssetBrowserStatus] = useState<AssetBrowserStatus>("active");
   const [bootStatus, setBootStatus] = useState<BootStatus>("checking");
   const apiReady = bootStatus === "ready";
   const projects = useProjects(apiReady);
@@ -100,7 +102,15 @@ export default function App() {
     }
 
     if (view === "assets") {
-      return <AssetsPage apiReady={apiReady} projects={projects.data ?? []} onOpenAsset={(assetId) => openAsset(assetId, "assets")} />;
+      return (
+        <AssetsPage
+          apiReady={apiReady}
+          projects={projects.data ?? []}
+          selectedStatus={assetBrowserStatus}
+          onSelectedStatusChange={setAssetBrowserStatus}
+          onOpenAsset={(assetId) => openAsset(assetId, "assets")}
+        />
+      );
     }
 
     if (view === "connectors") {
@@ -138,6 +148,14 @@ export default function App() {
           isError={selectedAsset.isError}
           error={selectedAsset.error}
           onBack={() => setView(assetBackView)}
+          onMovedToTrash={() => {
+            setAssetBrowserStatus("trashed");
+            setView("assets");
+          }}
+          onRestored={() => {
+            setAssetBrowserStatus("active");
+            setView("assets");
+          }}
         />
       );
     }

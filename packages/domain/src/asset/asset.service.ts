@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "fs";
+import { existsSync, readdirSync, statSync, unlinkSync } from "fs";
 import { basename, extname, join } from "path";
 import { randomUUID } from "crypto";
 import type { AssetRepository, EventRepository } from "@starline/storage";
@@ -66,7 +66,9 @@ function toResponse(row: {
   contentHash:      string;
   tags:             string[];
   description:      string | null;
-  status:           "active" | "archived";
+  status:           "active" | "trashed";
+  origin:           "imported" | "generated";
+  trashedAt:        string | null;
   visibility:       "public" | "private";
   createdAt:        string;
   updatedAt:        string;
@@ -86,6 +88,8 @@ function toResponse(row: {
     tags:             row.tags,
     description:      row.description,
     status:           row.status,
+    origin:           row.origin,
+    trashedAt:        row.trashedAt ?? null,
     visibility:       row.visibility,
     createdAt:        row.createdAt,
     updatedAt:        row.updatedAt,
@@ -152,6 +156,7 @@ export function createAssetService(repo: AssetRepository, computeHash: ComputeHa
           contentHash: hash,
           tags:        input.tags ?? [],
           description: input.description ?? null,
+          origin:      "imported",
           visibility:  input.visibility ?? "public",
         });
         eventRepo?.create({
@@ -249,6 +254,49 @@ export function createAssetService(repo: AssetRepository, computeHash: ComputeHa
     getById(id: string): AssetResponse | null {
       const row = repo.getById(id);
       return row ? toResponse(row) : null;
+    },
+
+    moveToTrash(id: string): AssetResponse | null {
+      const existing = repo.getById(id);
+      if (!existing) return null;
+      if (existing.status === "trashed") return toResponse(existing);
+
+      const trashedAt = new Date().toISOString();
+      const updated = repo.moveToTrash(id, trashedAt);
+      if (!updated) return null;
+      return toResponse(updated);
+    },
+
+    restoreFromTrash(id: string): AssetResponse | null {
+      const existing = repo.getById(id);
+      if (!existing) return null;
+      if (existing.status !== "trashed") return toResponse(existing);
+
+      const updated = repo.restoreFromTrash(id);
+      if (!updated) return null;
+      return toResponse(updated);
+    },
+
+    purgeExpiredTrash(now = new Date()): { purgedCount: number; deletedFiles: number } {
+      const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const expiredAssets = repo.listExpiredTrash(cutoff);
+      let purgedCount = 0;
+      let deletedFiles = 0;
+
+      for (const asset of expiredAssets) {
+        if (asset.origin === "generated" && existsSync(asset.filePath)) {
+          try {
+            unlinkSync(asset.filePath);
+            deletedFiles += 1;
+          } catch {
+            // best-effort local cleanup; record deletion from platform regardless
+          }
+        }
+
+        purgedCount += repo.hardDelete(asset.id);
+      }
+
+      return { purgedCount, deletedFiles };
     },
 
     update(id: string, input: UpdateAssetInput): AssetResponse | null {

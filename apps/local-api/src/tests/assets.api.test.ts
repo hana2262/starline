@@ -123,11 +123,13 @@ describe("Asset Import API", () => {
   it("GET /api/assets/:id returns the asset with visibility", async () => {
     const res = await app.inject({ method: "GET", url: `/api/assets/${assetId}` });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ id: string; name: string; contentHash: string; visibility: string }>();
+    const body = res.json<{ id: string; name: string; contentHash: string; visibility: string; origin: string; trashedAt: string | null }>();
     expect(body.id).toBe(assetId);
     expect(body.name).toBe("My Asset");
     expect(body.contentHash).toBeTruthy();
     expect(body.visibility).toBe("private");
+    expect(body.origin).toBe("imported");
+    expect(body.trashedAt).toBeNull();
   });
 
   it("GET /api/assets/:id returns 404 for unknown id", async () => {
@@ -189,6 +191,30 @@ describe("Asset Import API", () => {
     expect(body.items.some((item) => item.asset.name === "poster.png" && item.asset.type === "image")).toBe(true);
     expect(body.items.some((item) => item.asset.name === "prompt.txt" && item.asset.type === "prompt")).toBe(true);
     expect(body.items.every((item) => item.asset.visibility === "private")).toBe(true);
+  });
+
+  it("POST /api/assets/:id/trash moves an asset into trash", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/assets/${assetId}/trash`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ status: string; trashedAt: string | null }>();
+    expect(body.status).toBe("trashed");
+    expect(body.trashedAt).toBeTruthy();
+  });
+
+  it("POST /api/assets/:id/restore restores an asset from trash", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/assets/${assetId}/restore`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ status: string; trashedAt: string | null }>();
+    expect(body.status).toBe("active");
+    expect(body.trashedAt).toBeNull();
   });
 
   it("PATCH /api/assets/:id returns 400 on empty update", async () => {

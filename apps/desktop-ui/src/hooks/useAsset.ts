@@ -17,6 +17,33 @@ export function useUpdateAsset() {
     mutationFn: ({ id, input }: { id: string; input: UpdateAssetInput }) =>
       assetsApi.update(id, input),
     onSuccess: (asset) => {
+      qc.setQueryData(["asset", asset.id], asset);
+      qc.invalidateQueries({ queryKey: ["asset", asset.id] });
+      qc.invalidateQueries({ queryKey: ["assets"] });
+    },
+  });
+}
+
+export function useTrashAsset() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => assetsApi.moveToTrash(id),
+    onSuccess: (asset) => {
+      qc.setQueryData(["asset", asset.id], asset);
+      qc.invalidateQueries({ queryKey: ["asset", asset.id] });
+      qc.invalidateQueries({ queryKey: ["assets"] });
+    },
+  });
+}
+
+export function useRestoreAsset() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => assetsApi.restoreFromTrash(id),
+    onSuccess: (asset) => {
+      qc.setQueryData(["asset", asset.id], asset);
       qc.invalidateQueries({ queryKey: ["asset", asset.id] });
       qc.invalidateQueries({ queryKey: ["assets"] });
     },

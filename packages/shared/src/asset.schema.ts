@@ -3,6 +3,10 @@ import { VisibilitySchema } from "./project.schema.js";
 
 export const AssetTypeSchema = z.enum(["image", "video", "audio", "prompt", "other"]);
 export type AssetType = z.infer<typeof AssetTypeSchema>;
+export const AssetStatusSchema = z.enum(["active", "trashed"]);
+export type AssetStatus = z.infer<typeof AssetStatusSchema>;
+export const AssetOriginSchema = z.enum(["imported", "generated"]);
+export type AssetOrigin = z.infer<typeof AssetOriginSchema>;
 
 export const ImportAssetSchema = z.object({
   filePath:    z.string().min(1),
@@ -44,7 +48,9 @@ export const AssetResponseSchema = z.object({
   contentHash:      z.string(),
   tags:             z.array(z.string()),
   description:      z.string().nullable(),
-  status:           z.enum(["active", "archived"]),
+  status:           AssetStatusSchema,
+  origin:           AssetOriginSchema,
+  trashedAt:        z.string().nullable(),
   visibility:       VisibilitySchema,
   createdAt:        z.string(),
   updatedAt:        z.string(),

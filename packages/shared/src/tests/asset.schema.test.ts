@@ -17,6 +17,8 @@ const validAsset = {
   tags:             [],
   description:      null,
   status:           "active" as const,
+  origin:           "imported" as const,
+  trashedAt:        null,
   visibility:       "public" as const,
   createdAt:        new Date().toISOString(),
   updatedAt:        new Date().toISOString(),

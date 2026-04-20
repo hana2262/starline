@@ -21,6 +21,8 @@ function makeAssetRow(overrides: Partial<AssetRow> = {}): AssetRow {
     tags:        [],
     description: null,
     status:           "active",
+    origin:           "imported",
+    trashedAt:        null,
     visibility:       "public",
     createdAt:        "2026-01-01T00:00:00.000Z",
     updatedAt:        "2026-01-01T00:00:00.000Z",
@@ -39,6 +41,10 @@ function makeRepo(overrides: Partial<AssetRepository> = {}): AssetRepository {
     getByFilePath:   vi.fn(),
     updateProject:   vi.fn(),
     updateVisibility: vi.fn(),
+    moveToTrash:     vi.fn(),
+    restoreFromTrash: vi.fn(),
+    hardDelete:      vi.fn(),
+    listExpiredTrash: vi.fn(),
     clearProject:    vi.fn(),
     listByProject:   vi.fn(),
     list:            vi.fn(),
@@ -215,6 +221,74 @@ describe("assetService.update", () => {
 
     expect(repo.updateProject).toHaveBeenCalledWith("asset-1", "proj-1");
     expect(result?.projectId).toBe("proj-1");
+  });
+});
+
+describe("assetService trash lifecycle", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("moves an asset to trash", () => {
+    const existing = makeAssetRow();
+    const trashed = makeAssetRow({ status: "trashed", trashedAt: "2026-04-20T00:00:00.000Z" });
+    const repo = makeRepo({
+      getById: vi.fn().mockReturnValue(existing),
+      moveToTrash: vi.fn().mockReturnValue(trashed),
+    });
+
+    const service = createAssetService(repo, vi.fn());
+    const result = service.moveToTrash("asset-1");
+
+    expect(repo.moveToTrash).toHaveBeenCalledOnce();
+    expect(result?.status).toBe("trashed");
+    expect(result?.trashedAt).toBeTruthy();
+  });
+
+  it("restores an asset from trash", () => {
+    const existing = makeAssetRow({ status: "trashed", trashedAt: "2026-04-20T00:00:00.000Z" });
+    const restored = makeAssetRow();
+    const repo = makeRepo({
+      getById: vi.fn().mockReturnValue(existing),
+      restoreFromTrash: vi.fn().mockReturnValue(restored),
+    });
+
+    const service = createAssetService(repo, vi.fn());
+    const result = service.restoreFromTrash("asset-1");
+
+    expect(repo.restoreFromTrash).toHaveBeenCalledWith("asset-1");
+    expect(result?.status).toBe("active");
+    expect(result?.trashedAt).toBeNull();
+  });
+
+  it("purges expired trash and deletes generated files only", () => {
+    const generatedPath = path.join(os.tmpdir(), "starline-generated-trash.txt");
+    fs.writeFileSync(generatedPath, "generated");
+    const repo = makeRepo({
+      listExpiredTrash: vi.fn().mockReturnValue([
+        makeAssetRow({
+          id: "generated-1",
+          origin: "generated",
+          status: "trashed",
+          trashedAt: "2026-03-01T00:00:00.000Z",
+          filePath: generatedPath,
+        }),
+        makeAssetRow({
+          id: "imported-1",
+          origin: "imported",
+          status: "trashed",
+          trashedAt: "2026-03-01T00:00:00.000Z",
+          filePath: path.join(os.tmpdir(), "starline-imported-trash.txt"),
+        }),
+      ]),
+      hardDelete: vi.fn().mockReturnValue(1),
+    });
+
+    const service = createAssetService(repo, vi.fn());
+    const result = service.purgeExpiredTrash(new Date("2026-04-20T00:00:00.000Z"));
+
+    expect(repo.hardDelete).toHaveBeenCalledTimes(2);
+    expect(result.purgedCount).toBe(2);
+    expect(result.deletedFiles).toBe(1);
+    expect(fs.existsSync(generatedPath)).toBe(false);
   });
 });
 

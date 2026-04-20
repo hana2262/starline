@@ -5,6 +5,7 @@ export const ListAssetsQuerySchema = z.object({
   query:     z.string().min(1).optional(),
   projectId: z.string().min(1).optional(),
   type:      AssetTypeSchema.optional(),
+  status:    z.enum(["active", "trashed", "all"]).optional(),
   limit:     z.coerce.number().int().min(1).max(200).default(50),
   offset:    z.coerce.number().int().min(0).default(0),
 });

@@ -81,10 +81,12 @@ function formatAssetLine(asset: AgentAssetReference): string {
 function isAgentVisibleAsset(
   asset: {
     projectId: string | null;
+    status: "active" | "trashed";
     visibility: "public" | "private";
   },
   projectRepo: ProjectRepository,
 ): boolean {
+  if (asset.status !== "active") return false;
   if (asset.visibility !== "public") return false;
   if (!asset.projectId) return true;
   const project = projectRepo.getById(asset.projectId);

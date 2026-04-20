@@ -57,6 +57,27 @@ beforeAll(async () => {
     payload: { filePath: fileD, type: "prompt", name: "cat prompt", projectId: "proj-2", tags: ["cat", "ai"] },
   });
   idD = rD.json<{ asset: { id: string } }>().asset.id;
+  it("#15 trashed assets are hidden from the default list but visible via trash/all filters", async () => {
+    const trashRes = await app.inject({ method: "POST", url: `/api/assets/${idB}/trash` });
+    expect(trashRes.statusCode).toBe(200);
+
+    const activeRes = await app.inject({ method: "GET", url: "/api/assets" });
+    expect(activeRes.statusCode).toBe(200);
+    const activeBody = activeRes.json<ListBody>();
+    expect(activeBody.total).toBe(3);
+    expect(activeBody.items.some((item) => item.id === idB)).toBe(false);
+
+    const trashListRes = await app.inject({ method: "GET", url: "/api/assets?status=trashed" });
+    expect(trashListRes.statusCode).toBe(200);
+    const trashBody = trashListRes.json<ListBody>();
+    expect(trashBody.total).toBe(1);
+    expect(trashBody.items[0]?.id).toBe(idB);
+
+    const allRes = await app.inject({ method: "GET", url: "/api/assets?status=all" });
+    expect(allRes.statusCode).toBe(200);
+    const allBody = allRes.json<ListBody>();
+    expect(allBody.total).toBe(4);
+  });
 });
 
 afterAll(async () => {
@@ -180,6 +201,30 @@ describe("Asset List API", () => {
   it("#14 GET /api/assets?limit=201 — 400 validation error", async () => {
     const res = await app.inject({ method: "GET", url: "/api/assets?limit=201" });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("Asset trash filters", () => {
+  it("hides trashed assets from the default list but exposes them in trash/all filters", async () => {
+    const trashRes = await app.inject({ method: "POST", url: `/api/assets/${idB}/trash` });
+    expect(trashRes.statusCode).toBe(200);
+
+    const activeRes = await app.inject({ method: "GET", url: "/api/assets" });
+    expect(activeRes.statusCode).toBe(200);
+    const activeBody = activeRes.json<ListBody>();
+    expect(activeBody.total).toBe(3);
+    expect(activeBody.items.some((item) => item.id === idB)).toBe(false);
+
+    const trashListRes = await app.inject({ method: "GET", url: "/api/assets?status=trashed" });
+    expect(trashListRes.statusCode).toBe(200);
+    const trashBody = trashListRes.json<ListBody>();
+    expect(trashBody.total).toBe(1);
+    expect(trashBody.items[0]?.id).toBe(idB);
+
+    const allRes = await app.inject({ method: "GET", url: "/api/assets?status=all" });
+    expect(allRes.statusCode).toBe(200);
+    const allBody = allRes.json<ListBody>();
+    expect(allBody.total).toBe(4);
   });
 });
 

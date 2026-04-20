@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AssetResponse, ProjectResponse } from "@starline/shared";
-import { useUpdateAsset } from "../hooks/useAsset.js";
+import { useRestoreAsset, useTrashAsset, useUpdateAsset } from "../hooks/useAsset.js";
 import { useI18n } from "../lib/i18n.js";
 import { assetsApi } from "../lib/api.js";
 
@@ -11,6 +11,8 @@ interface Props {
   isError: boolean;
   error: unknown;
   onBack: () => void;
+  onMovedToTrash: () => void;
+  onRestored: () => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -21,7 +23,7 @@ function formatFileSize(bytes: number): string {
 
 function AssetPreview({ asset }: { asset: AssetResponse }) {
   const { text, formatAssetType } = useI18n();
-  const [promptContent, setPromptContent] = useState<string>("");
+  const [promptContent, setPromptContent] = useState("");
   const [promptState, setPromptState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
   const [mediaFailed, setMediaFailed] = useState(false);
   const contentUrl = useMemo(() => assetsApi.contentUrl(asset.id), [asset.id]);
@@ -116,16 +118,10 @@ function AssetPreview({ asset }: { asset: AssetResponse }) {
   if (asset.type === "prompt") {
     return (
       <div className="rounded-xl border border-gray-200 bg-gray-950 p-4">
-        {promptState === "loading" && (
-          <p className="text-sm text-gray-300">{text.loadingPromptPreview}</p>
-        )}
-        {promptState === "failed" && (
-          <p className="text-sm text-red-300">{text.promptPreviewFailed}</p>
-        )}
+        {promptState === "loading" && <p className="text-sm text-gray-300">{text.loadingPromptPreview}</p>}
+        {promptState === "failed" && <p className="text-sm text-red-300">{text.promptPreviewFailed}</p>}
         {promptState === "ready" && (
-          <pre className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-100">
-            {promptContent}
-          </pre>
+          <pre className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-100">{promptContent}</pre>
         )}
       </div>
     );
@@ -134,25 +130,36 @@ function AssetPreview({ asset }: { asset: AssetResponse }) {
   return (
     <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center">
       <p className="text-sm font-medium text-gray-700">{text.previewUnavailableTitle}</p>
-      <p className="mt-2 text-sm text-gray-500">
-        {text.previewUnavailableBody(formatAssetType(asset.type))}
-      </p>
+      <p className="mt-2 text-sm text-gray-500">{text.previewUnavailableBody(formatAssetType(asset.type))}</p>
     </div>
   );
 }
 
-export default function AssetDetailPage({ asset, projects, isLoading, isError, error, onBack }: Props) {
+export default function AssetDetailPage({
+  asset,
+  projects,
+  isLoading,
+  isError,
+  error,
+  onBack,
+  onMovedToTrash,
+  onRestored,
+}: Props) {
   const { locale, text, formatAssetType, formatVisibility } = useI18n();
   const updateAsset = useUpdateAsset();
+  const trashAsset = useTrashAsset();
+  const restoreAsset = useRestoreAsset();
   const [visibility, setVisibility] = useState<"public" | "private">("public");
   const [projectId, setProjectId] = useState("");
   const [saveNotice, setSaveNotice] = useState<"idle" | "saved" | "failed">("idle");
+  const [trashNotice, setTrashNotice] = useState<"idle" | "failed">("idle");
 
   useEffect(() => {
     if (asset) {
       setVisibility(asset.visibility);
       setProjectId(asset.projectId ?? "");
       setSaveNotice("idle");
+      setTrashNotice("idle");
     }
   }, [asset]);
 
@@ -161,19 +168,28 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
     [asset?.projectId, projects],
   );
 
-  const generationMeta = useMemo(() => {
-    if (!asset?.generationMeta) return null;
-    return asset.generationMeta;
-  }, [asset?.generationMeta]);
-
   const visibilityDirty = asset ? visibility !== asset.visibility : false;
   const projectDirty = asset ? projectId !== (asset.projectId ?? "") : false;
   const saveDirty = visibilityDirty || projectDirty;
+  const moveToTrashLabel = locale === "zh-CN" ? "移入回收站" : "Move to trash";
+  const restoreLabel = locale === "zh-CN" ? "恢复资产" : "Restore asset";
+  const trashStatusLabel = locale === "zh-CN" ? "回收站" : "Trash";
+  const importedOriginLabel = locale === "zh-CN" ? "导入资源" : "Imported";
+  const generatedOriginLabel = locale === "zh-CN" ? "生成资源" : "Generated";
   const assetAssociationHelp =
     text.assetProjectHelp ??
     (locale === "zh-CN"
-      ? "将资产关联到某个项目，或清空项目关联。"
+      ? "将这个资产关联到某个项目，或者清空项目关联。"
       : "Associate this asset with a project, or clear the project link.");
+  const saveChangesLabel = text.saveChanges ?? (locale === "zh-CN" ? "保存更改" : "Save changes");
+  const savingLabel = text.saving ?? (locale === "zh-CN" ? "保存中..." : "Saving...");
+  const saveSuccessLabel = text.assetVisibilitySaved ?? (locale === "zh-CN" ? "资产设置已保存。" : "Asset settings saved.");
+  const saveFailedLabel = text.assetVisibilitySaveFailed ?? (locale === "zh-CN" ? "保存资产设置失败。" : "Failed to save asset settings.");
+  const confirmTrashText = locale === "zh-CN" ? "确定将这个资产移入回收站吗？" : "Move this asset to the trash?";
+  const originLabel = locale === "zh-CN" ? "来源" : "Origin";
+  const trashedAtLabel = locale === "zh-CN" ? "移入回收站时间" : "Trashed at";
+  const trashFailedLabel = locale === "zh-CN" ? "移入回收站失败，请重试。" : "Failed to move asset to the recycle bin.";
+  const restoreFailedLabel = locale === "zh-CN" ? "恢复资产失败，请重试。" : "Failed to restore asset.";
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -224,16 +240,14 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
                 {asset.generationPrompt && (
                   <div className="sm:col-span-2">
                     <dt className="text-gray-500">Prompt</dt>
-                    <dd className="mt-1 whitespace-pre-wrap break-words text-gray-900">
-                      {asset.generationPrompt}
-                    </dd>
+                    <dd className="mt-1 whitespace-pre-wrap break-words text-gray-900">{asset.generationPrompt}</dd>
                   </div>
                 )}
-                {generationMeta && (
+                {asset.generationMeta && (
                   <div className="sm:col-span-2">
                     <dt className="text-gray-500">Meta</dt>
                     <dd className="mt-1 whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-3 font-mono text-xs text-gray-700">
-                      {generationMeta}
+                      {asset.generationMeta}
                     </dd>
                   </div>
                 )}
@@ -255,8 +269,50 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
                   <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
                     {formatVisibility(asset.visibility)}
                   </span>
+                  {asset.status === "trashed" && (
+                    <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
+                      {trashStatusLabel}
+                    </span>
+                  )}
                 </div>
               </div>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                {asset.status === "trashed" ? (
+                  <button
+                    onClick={() =>
+                      restoreAsset.mutate(asset.id, {
+                        onSuccess: () => onRestored(),
+                        onError: () => setTrashNotice("failed"),
+                      })}
+                    disabled={restoreAsset.isPending}
+                    className="rounded border border-green-300 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+                  >
+                    {restoreLabel}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const confirmed = window.confirm(confirmTrashText);
+                      if (!confirmed) return;
+                      setTrashNotice("idle");
+                      trashAsset.mutate(asset.id, {
+                        onSuccess: () => onMovedToTrash(),
+                        onError: () => setTrashNotice("failed"),
+                      });
+                    }}
+                    disabled={trashAsset.isPending}
+                    className="rounded border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {moveToTrashLabel}
+                  </button>
+                )}
+              </div>
+              {trashNotice === "failed" && (
+                <p className="mt-3 text-sm text-red-600">
+                  {asset.status === "trashed" ? restoreFailedLabel : trashFailedLabel}
+                </p>
+              )}
 
               <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
                 <label className="block">
@@ -306,10 +362,7 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
                       updateAsset.mutate(
                         {
                           id: asset.id,
-                          input: {
-                            visibility,
-                            projectId: projectId || null,
-                          },
+                          input: { visibility, projectId: projectId || null },
                         },
                         {
                           onSuccess: () => setSaveNotice("saved"),
@@ -320,20 +373,10 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
                     disabled={!saveDirty || updateAsset.isPending}
                     className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
                   >
-                    {updateAsset.isPending
-                      ? (text.saving ?? (locale === "zh-CN" ? "保存中..." : "Saving..."))
-                      : (text.saveChanges ?? (locale === "zh-CN" ? "保存更改" : "Save changes"))}
+                    {updateAsset.isPending ? savingLabel : saveChangesLabel}
                   </button>
-                  {saveNotice === "saved" && (
-                    <span className="text-sm text-green-700">
-                      {text.assetVisibilitySaved ?? (locale === "zh-CN" ? "资产设置已保存。" : "Asset settings saved.")}
-                    </span>
-                  )}
-                  {saveNotice === "failed" && (
-                    <span className="text-sm text-red-600">
-                      {text.assetVisibilitySaveFailed ?? (locale === "zh-CN" ? "保存资产设置失败。" : "Failed to save asset settings.")}
-                    </span>
-                  )}
+                  {saveNotice === "saved" && <span className="text-sm text-green-700">{saveSuccessLabel}</span>}
+                  {saveNotice === "failed" && <span className="text-sm text-red-600">{saveFailedLabel}</span>}
                 </div>
               </div>
             </div>
@@ -354,12 +397,22 @@ export default function AssetDetailPage({ asset, projects, isLoading, isError, e
                 </div>
                 <div>
                   <dt className="text-gray-500">{text.statusLabel}</dt>
-                  <dd className="mt-1 text-gray-900">{asset.status}</dd>
+                  <dd className="mt-1 text-gray-900">{asset.status === "trashed" ? trashStatusLabel : asset.status}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">{originLabel}</dt>
+                  <dd className="mt-1 text-gray-900">{asset.origin === "generated" ? generatedOriginLabel : importedOriginLabel}</dd>
                 </div>
                 <div>
                   <dt className="text-gray-500">{text.mimeTypeLabel}</dt>
                   <dd className="mt-1 text-gray-900">{asset.mimeType ?? text.notAvailable}</dd>
                 </div>
+                {asset.trashedAt && (
+                  <div>
+                    <dt className="text-gray-500">{trashedAtLabel}</dt>
+                    <dd className="mt-1 text-gray-900">{new Date(asset.trashedAt).toLocaleString()}</dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-gray-500">{text.created}</dt>
                   <dd className="mt-1 text-gray-900">{new Date(asset.createdAt).toLocaleString()}</dd>

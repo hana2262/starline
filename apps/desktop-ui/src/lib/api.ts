@@ -26,8 +26,13 @@ import { API_BASE } from "./runtime.js";
 const BASE = API_BASE;
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (init?.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(`${BASE}${url}`, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...init,
   });
   if (!res.ok) {
@@ -66,6 +71,7 @@ function toQueryString(query: ListAssetsQuery): string {
   if (query.query) params.set("query", query.query);
   if (query.projectId) params.set("projectId", query.projectId);
   if (query.type) params.set("type", query.type);
+  if (query.status) params.set("status", query.status);
   params.set("limit", String(query.limit));
   params.set("offset", String(query.offset));
   const encoded = params.toString();
@@ -80,6 +86,14 @@ export const assetsApi = {
     request<AssetResponse>(`/assets/${id}`, {
       method: "PATCH",
       body: JSON.stringify(input),
+    }),
+  moveToTrash: (id: string) =>
+    request<AssetResponse>(`/assets/${id}/trash`, {
+      method: "POST",
+    }),
+  restoreFromTrash: (id: string) =>
+    request<AssetResponse>(`/assets/${id}/restore`, {
+      method: "POST",
     }),
   contentUrl: (id: string) => `${BASE}/assets/${id}/content`,
   import: (input: ImportAssetInput) =>

@@ -41,6 +41,11 @@ function resolveGenerationConcurrency(
   return 1;
 }
 
+function isRecoverableTrashPurgeError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes("no such column") && error.message.includes("origin");
+}
+
 export function buildServer(
   dbPath: string,
   options?: { extraConnectors?: Map<string, Connector>; retryBaseMs?: number; generationConcurrency?: number },
@@ -66,6 +71,25 @@ export function buildServer(
   const eventRepo = createEventRepository(db);
   const projectService = createProjectService(projectRepo, assetRepo, eventRepo);
   const assetService   = createAssetService(assetRepo, computeFileHash, eventRepo);
+  try {
+    const purgeResult = assetService.purgeExpiredTrash();
+    if (purgeResult.purgedCount > 0 || purgeResult.deletedFiles > 0) {
+      app.log.info({
+        event: "asset.trash.purged",
+        purgedCount: purgeResult.purgedCount,
+        deletedFiles: purgeResult.deletedFiles,
+      }, "expired trash assets purged");
+    }
+  } catch (error) {
+    if (!isRecoverableTrashPurgeError(error)) {
+      throw error;
+    }
+    const reason = error instanceof Error ? error.message : String(error);
+    app.log.warn({
+      event: "asset.trash.purge.skipped",
+      reason,
+    }, "skipping trash purge until schema columns are available");
+  }
   const generationRepo = createGenerationRepository(db);
   const connectorConfigRepo = createConnectorConfigRepository(db);
   const connectorSecretRepo = createConnectorSecretRepository(db);

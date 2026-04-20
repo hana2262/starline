@@ -5,6 +5,10 @@ interface Props {
   result: AssetListResponse;
   onOpenAsset?: (assetId: string) => void;
   projectNameById?: Record<string, string>;
+  selectable?: boolean;
+  selectedIds?: string[];
+  onToggleSelected?: (assetId: string, checked: boolean) => void;
+  onRestoreAsset?: (assetId: string) => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -13,8 +17,19 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function AssetList({ result, onOpenAsset, projectNameById = {} }: Props) {
-  const { text, formatAssetType, formatVisibility } = useI18n();
+export default function AssetList({
+  result,
+  onOpenAsset,
+  projectNameById = {},
+  selectable = false,
+  selectedIds = [],
+  onToggleSelected,
+  onRestoreAsset,
+}: Props) {
+  const { locale, text, formatAssetType, formatVisibility } = useI18n();
+  const restoreLabel = locale === "zh-CN" ? "恢复" : "Restore";
+  const trashedStatusLabel = locale === "zh-CN" ? "回收站" : "Trash";
+  const selectAssetLabel = locale === "zh-CN" ? "选择资产" : "Select asset";
 
   if (result.items.length === 0) {
     return (
@@ -30,6 +45,17 @@ export default function AssetList({ result, onOpenAsset, projectNameById = {} }:
         <article key={asset.id} className="bg-white border border-gray-200 rounded-lg p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
+              {selectable && asset.status === "active" && (
+                <label className="mb-2 flex items-center gap-2 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(asset.id)}
+                    onChange={(event) => onToggleSelected?.(asset.id, event.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{selectAssetLabel}</span>
+                </label>
+              )}
               <button
                 onClick={() => onOpenAsset?.(asset.id)}
                 className="truncate text-left font-medium text-gray-900 hover:text-blue-600"
@@ -61,7 +87,9 @@ export default function AssetList({ result, onOpenAsset, projectNameById = {} }:
             <span className="px-2 py-1 rounded bg-gray-100">
               {asset.projectId ? (projectNameById[asset.projectId] ?? asset.projectId) : text.assetStatusNoProject}
             </span>
-            <span className="px-2 py-1 rounded bg-gray-100">{asset.status}</span>
+            <span className={`px-2 py-1 rounded ${asset.status === "trashed" ? "bg-red-50 text-red-700" : "bg-gray-100"}`}>
+              {asset.status === "trashed" ? trashedStatusLabel : asset.status}
+            </span>
             {asset.sourceConnector && (
               <span className="px-2 py-1 rounded bg-purple-50 text-purple-700">
                 {text.assetGeneratedFrom}: {asset.sourceConnector}
@@ -79,7 +107,15 @@ export default function AssetList({ result, onOpenAsset, projectNameById = {} }:
             </div>
           )}
 
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex justify-end gap-3">
+            {asset.status === "trashed" && onRestoreAsset && (
+              <button
+                onClick={() => onRestoreAsset(asset.id)}
+                className="text-sm font-medium text-green-600 hover:text-green-700"
+              >
+                {restoreLabel}
+              </button>
+            )}
             <button
               onClick={() => onOpenAsset?.(asset.id)}
               className="text-sm font-medium text-blue-600 hover:text-blue-700"

@@ -50,6 +50,7 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
       contentHash:      string;
       tags?:            string[];
       description?:     string | null;
+      origin?:          "imported" | "generated";
       visibility?:      "public" | "private";
       sourceConnector?:  string | null;
       generationPrompt?: string | null;
@@ -67,6 +68,8 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
         tags:             serializeTags(input.tags ?? []),
         description:      input.description ?? null,
         status:           "active",
+        origin:           input.origin ?? "imported",
+        trashedAt:        null,
         visibility:       input.visibility ?? "public",
         createdAt:        now(),
         updatedAt:        now(),
@@ -133,6 +136,57 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
       return row ? toAssetRow(row) : undefined;
     },
 
+    moveToTrash(id: string, trashedAt: string): AssetRow | undefined {
+      db
+        .update(assets)
+        .set({
+          status: "trashed",
+          trashedAt,
+          updatedAt: now(),
+        })
+        .where(eq(assets.id, id))
+        .run();
+
+      const row = db.select().from(assets).where(eq(assets.id, id)).get();
+      return row ? toAssetRow(row) : undefined;
+    },
+
+    restoreFromTrash(id: string): AssetRow | undefined {
+      db
+        .update(assets)
+        .set({
+          status: "active",
+          trashedAt: null,
+          updatedAt: now(),
+        })
+        .where(eq(assets.id, id))
+        .run();
+
+      const row = db.select().from(assets).where(eq(assets.id, id)).get();
+      return row ? toAssetRow(row) : undefined;
+    },
+
+    hardDelete(id: string): number {
+      sqlite.prepare(`DELETE FROM assets_fts WHERE id = ?`).run(id);
+      const result = db.delete(assets).where(eq(assets.id, id)).run();
+      return result.changes;
+    },
+
+    listExpiredTrash(beforeIso: string): AssetRow[] {
+      return db
+        .select()
+        .from(assets)
+        .where(
+          and(
+            eq(assets.status, "trashed"),
+            sql`${assets.trashedAt} IS NOT NULL`,
+            sql`${assets.trashedAt} <= ${beforeIso}`,
+          ),
+        )
+        .all()
+        .map(toAssetRow);
+    },
+
     clearProject(projectId: string): number {
       const result = db
         .update(assets)
@@ -154,6 +208,7 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
       query?: string;
       projectId?: string;
       type?: "image" | "video" | "audio" | "prompt" | "other";
+      status?: "active" | "trashed" | "all";
       visibility?: "public" | "private";
       limit: number;
       offset: number;
@@ -183,6 +238,12 @@ export function createAssetRepository(db: Db, sqlite: Database.Database) {
       }
       if (filters.type) {
         conditions.push(eq(assets.type, filters.type));
+      }
+      if (filters.status && filters.status !== "all") {
+        conditions.push(eq(assets.status, filters.status));
+      }
+      if (!filters.status) {
+        conditions.push(eq(assets.status, "active"));
       }
       if (filters.visibility) {
         conditions.push(eq(assets.visibility, filters.visibility));
