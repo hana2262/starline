@@ -49,6 +49,16 @@ export function registerAssetRoutes(app: FastifyInstance, assetService: AssetSer
     return reply.send(asset);
   });
 
+  app.delete<{ Params: { id: string } }>("/api/assets/:id", async (req, reply) => {
+    assetService.removeFromLibrary(req.params.id);
+    return reply.code(204).send();
+  });
+
+  app.delete<{ Params: { id: string } }>("/api/assets/:id/permanent", async (req, reply) => {
+    assetService.permanentlyDelete(req.params.id);
+    return reply.code(204).send();
+  });
+
   app.get<{ Params: { id: string } }>("/api/assets/:id/content", async (req, reply) => {
     const asset = assetService.getById(req.params.id);
     if (!asset) return reply.code(404).send({ error: "Not found" });

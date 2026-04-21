@@ -1,7 +1,12 @@
 import { useMemo, useState } from "react";
 import type { AssetType, ProjectResponse } from "@starline/shared";
 import { useAssets } from "../hooks/useAssets.js";
-import { useRestoreAsset, useTrashAsset } from "../hooks/useAsset.js";
+import {
+  usePermanentlyDeleteAsset,
+  useRemoveAsset,
+  useRestoreAsset,
+  useTrashAsset,
+} from "../hooks/useAsset.js";
 import AssetFilters from "../components/AssetFilters.js";
 import AssetImportForm from "../components/AssetImportForm.js";
 import AssetList from "../components/AssetList.js";
@@ -34,6 +39,8 @@ export default function AssetsPage({
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const trashAsset = useTrashAsset();
   const restoreAsset = useRestoreAsset();
+  const removeAsset = useRemoveAsset();
+  const permanentlyDeleteAsset = usePermanentlyDeleteAsset();
 
   const result = useAssets(
     {
@@ -86,8 +93,8 @@ export default function AssetsPage({
 
   const canSelectForTrash = selectedStatus === "active";
   const assetManageHint = locale === "zh-CN"
-    ? "浏览资产、查看回收站，并先将不需要的内容移入回收站。"
-    : "Browse assets, review the trash, and move unneeded items into the recycle bin first.";
+    ? "在这里导入、筛选、查看资产，并先将不需要的内容移入回收站。"
+    : "Import, filter, inspect assets, and move unneeded items into the recycle bin first.";
   const trashSelectionLabel = locale === "zh-CN" ? "选择资产" : "Select assets";
   const cancelSelectionLabel = locale === "zh-CN" ? "取消选择" : "Cancel selection";
   const selectedAssetsLabel = locale === "zh-CN"
@@ -96,22 +103,36 @@ export default function AssetsPage({
   const moveToTrashLabel = locale === "zh-CN" ? "移入回收站" : "Move to trash";
   const movingToTrashLabel = locale === "zh-CN" ? "正在移入回收站..." : "Moving to trash...";
   const trashConfirmText = locale === "zh-CN"
-    ? `确定将所选的 ${selectedIds.length} 项资产移入回收站吗？`
-    : `Move ${selectedIds.length} selected assets to the trash?`;
+    ? `确认将这 ${selectedIds.length} 项资产移入回收站吗？`
+    : `Move ${selectedIds.length} selected assets to the recycle bin?`;
   const activeViewLabel = locale === "zh-CN" ? "资产库" : "Library";
   const trashViewLabel = locale === "zh-CN" ? "回收站" : "Recycle Bin";
   const allViewLabel = locale === "zh-CN" ? "全部" : "All";
   const movedToTrashNotice = locale === "zh-CN" ? "资产已移入回收站。" : "Assets moved to the recycle bin.";
   const restoredNotice = locale === "zh-CN" ? "资产已恢复到资产库。" : "Asset restored to the library.";
+  const removeNotice = locale === "zh-CN"
+    ? "资产记录已从平台移除，原始文件未删除。"
+    : "Asset record removed from the library. Original files were not deleted.";
+  const permanentDeleteNotice = locale === "zh-CN"
+    ? "已永久删除平台生成资产及其本地文件。"
+    : "Generated asset and its local file were permanently deleted.";
   const trashActionFailed = locale === "zh-CN" ? "更新资产回收站状态失败。" : "Failed to update asset trash status.";
+  const removeActionFailed = locale === "zh-CN" ? "从平台移除资产失败。" : "Failed to remove asset from library.";
+  const permanentDeleteFailed = locale === "zh-CN" ? "永久删除资产失败。" : "Failed to permanently delete asset.";
+  const removeConfirmText = locale === "zh-CN"
+    ? "确认从平台移除此资产记录吗？此操作不会删除 imported 原始文件。"
+    : "Remove this asset record from the library? Imported source files will not be deleted.";
+  const permanentDeleteConfirmText = locale === "zh-CN"
+    ? "确认永久删除该 generated 资产及其本地文件吗？此操作不可恢复。"
+    : "Permanently delete this generated asset and its local file? This cannot be undone.";
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">{text.assetPageTitle}</h2>
-          <p className="text-sm text-gray-500 mt-1">{text.assetPageSubtitle}</p>
-          <p className="text-sm text-gray-500 mt-1">{assetManageHint}</p>
+          <p className="mt-1 text-sm text-gray-500">{text.assetPageSubtitle}</p>
+          <p className="mt-1 text-sm text-gray-500">{assetManageHint}</p>
         </div>
       </div>
 
@@ -232,20 +253,36 @@ export default function AssetsPage({
                 onSuccess: () => setActionNotice(restoredNotice),
                 onError: () => setActionNotice(trashActionFailed),
               })}
+            onRemoveAsset={(assetId) => {
+              const confirmed = window.confirm(removeConfirmText);
+              if (!confirmed) return;
+              removeAsset.mutate(assetId, {
+                onSuccess: () => setActionNotice(removeNotice),
+                onError: () => setActionNotice(removeActionFailed),
+              });
+            }}
+            onPermanentlyDeleteAsset={(assetId) => {
+              const confirmed = window.confirm(permanentDeleteConfirmText);
+              if (!confirmed) return;
+              permanentlyDeleteAsset.mutate(assetId, {
+                onSuccess: () => setActionNotice(permanentDeleteNotice),
+                onError: () => setActionNotice(permanentDeleteFailed),
+              });
+            }}
           />
 
           <div className="flex justify-end gap-2">
             <button
               onClick={() => setPage((current) => Math.max(0, current - 1))}
               disabled={page === 0}
-              className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
               {text.previous}
             </button>
             <button
               onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
               disabled={page >= totalPages - 1}
-              className="px-3 py-2 text-sm rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
               {text.next}
             </button>

@@ -49,3 +49,27 @@ export function useRestoreAsset() {
     },
   });
 }
+
+export function useRemoveAsset() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => assetsApi.removeFromLibrary(id),
+    onSuccess: (_result, id) => {
+      qc.removeQueries({ queryKey: ["asset", id] });
+      qc.invalidateQueries({ queryKey: ["assets"] });
+    },
+  });
+}
+
+export function usePermanentlyDeleteAsset() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => assetsApi.permanentlyDelete(id),
+    onSuccess: (_result, id) => {
+      qc.removeQueries({ queryKey: ["asset", id] });
+      qc.invalidateQueries({ queryKey: ["assets"] });
+    },
+  });
+}

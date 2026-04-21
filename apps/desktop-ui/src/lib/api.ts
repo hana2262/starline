@@ -95,6 +95,20 @@ export const assetsApi = {
     request<AssetResponse>(`/assets/${id}/restore`, {
       method: "POST",
     }),
+  removeFromLibrary: async (id: string): Promise<void> => {
+    const res = await fetch(`${BASE}/assets/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`API ${res.status}: ${body}`);
+    }
+  },
+  permanentlyDelete: async (id: string): Promise<void> => {
+    const res = await fetch(`${BASE}/assets/${id}/permanent`, { method: "DELETE" });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`API ${res.status}: ${body}`);
+    }
+  },
   contentUrl: (id: string) => `${BASE}/assets/${id}/content`,
   import: (input: ImportAssetInput) =>
     request<ImportAssetResult>("/assets/import", {

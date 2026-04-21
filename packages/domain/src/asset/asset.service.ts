@@ -25,6 +25,16 @@ export class AssetImportError extends Error {
   }
 }
 
+export class AssetDeleteError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "ASSET_NOT_FOUND" | "ASSET_NOT_TRASHED" | "PERMANENT_DELETE_FORBIDDEN",
+  ) {
+    super(message);
+    this.name = "AssetDeleteError";
+  }
+}
+
 type ComputeHashFn = typeof computeFileHash;
 
 function inferAssetType(filePath: string): "image" | "video" | "audio" | "prompt" | "other" {
@@ -275,6 +285,44 @@ export function createAssetService(repo: AssetRepository, computeHash: ComputeHa
       const updated = repo.restoreFromTrash(id);
       if (!updated) return null;
       return toResponse(updated);
+    },
+
+    removeFromLibrary(id: string): void {
+      const existing = repo.getById(id);
+      if (!existing) {
+        throw new AssetDeleteError("Asset not found", "ASSET_NOT_FOUND");
+      }
+      if (existing.status !== "trashed") {
+        throw new AssetDeleteError("Asset must be in trash before removal", "ASSET_NOT_TRASHED");
+      }
+
+      repo.hardDelete(id);
+    },
+
+    permanentlyDelete(id: string): void {
+      const existing = repo.getById(id);
+      if (!existing) {
+        throw new AssetDeleteError("Asset not found", "ASSET_NOT_FOUND");
+      }
+      if (existing.status !== "trashed") {
+        throw new AssetDeleteError("Asset must be in trash before permanent deletion", "ASSET_NOT_TRASHED");
+      }
+      if (existing.origin !== "generated") {
+        throw new AssetDeleteError(
+          "Permanent file deletion is only allowed for generated assets",
+          "PERMANENT_DELETE_FORBIDDEN",
+        );
+      }
+
+      if (existsSync(existing.filePath)) {
+        try {
+          unlinkSync(existing.filePath);
+        } catch {
+          // best-effort local cleanup; platform record removal still proceeds
+        }
+      }
+
+      repo.hardDelete(id);
     },
 
     purgeExpiredTrash(now = new Date()): { purgedCount: number; deletedFiles: number } {

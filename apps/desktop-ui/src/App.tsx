@@ -156,6 +156,14 @@ export default function App() {
             setAssetBrowserStatus("active");
             setView("assets");
           }}
+          onRemovedFromLibrary={() => {
+            setAssetBrowserStatus("trashed");
+            setView("assets");
+          }}
+          onPermanentlyDeleted={() => {
+            setAssetBrowserStatus("trashed");
+            setView("assets");
+          }}
         />
       );
     }

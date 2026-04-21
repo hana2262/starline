@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import type { FastifyBaseLogger } from "fastify";
 import path from "path";
 import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository, createConnectorConfigRepository, createConnectorSecretRepository, createAgentRepository, createEventRepository } from "@starline/storage";
-import { createProjectService, createAssetService, AssetImportError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError, createAgentService, AgentError, createAnalyticsService, AnalyticsError } from "@starline/domain";
+import { createProjectService, createAssetService, AssetImportError, AssetDeleteError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError, createAgentService, AgentError, createAnalyticsService, AnalyticsError } from "@starline/domain";
 import { MockConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
 import { runMigrations } from "@starline/storage/src/migrate.js";
@@ -16,7 +16,7 @@ import { buildConfiguredConnectors } from "./connectors.runtime.js";
 
 function setCorsHeaders(reply: { header: (name: string, value: string) => unknown }): void {
   reply.header("Access-Control-Allow-Origin", "*");
-  reply.header("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
+  reply.header("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   reply.header("Access-Control-Allow-Headers", "Content-Type");
 }
 
@@ -212,6 +212,13 @@ export function buildServer(
         error: err.message,
         code: err.code,
         ...(err.existingAssetId ? { existingAssetId: err.existingAssetId } : {}),
+      });
+    }
+    if (err instanceof AssetDeleteError) {
+      const status = err.code === "ASSET_NOT_FOUND" ? 404 : 409;
+      return reply.code(status).send({
+        error: err.message,
+        code: err.code,
       });
     }
     if (err.name === "ZodError") {

@@ -3,6 +3,7 @@ import { buildServer } from "../server.js";
 import path from "path";
 import os from "os";
 import fs from "fs";
+import { createAssetRepository, getDb, getSqlite } from "@starline/storage";
 
 const ts = Date.now();
 const DB_PATH = path.join(os.tmpdir(), `starline-assets-test-${ts}.db`);
@@ -12,6 +13,7 @@ const folderPath = path.join(os.tmpdir(), `starline-asset-folder-${ts}`);
 const folderImage = path.join(folderPath, "poster.png");
 const nestedDir = path.join(folderPath, "notes");
 const folderPrompt = path.join(nestedDir, "prompt.txt");
+const generatedFile = path.join(os.tmpdir(), `starline-generated-${ts}.txt`);
 
 const app = buildServer(DB_PATH);
 
@@ -21,12 +23,13 @@ beforeAll(async () => {
   fs.mkdirSync(nestedDir, { recursive: true });
   fs.writeFileSync(folderImage, "png-data");
   fs.writeFileSync(folderPrompt, "prompt-data");
+  fs.writeFileSync(generatedFile, "generated-data");
   await app.ready();
 });
 
 afterAll(async () => {
   await app.close();
-  for (const f of [tempFile, tempFile2, DB_PATH]) {
+  for (const f of [tempFile, tempFile2, generatedFile, DB_PATH]) {
     try {
       fs.unlinkSync(f);
     } catch {}
@@ -38,6 +41,7 @@ afterAll(async () => {
 
 describe("Asset Import API", () => {
   let assetId: string;
+  let generatedAssetId: string;
 
   it("POST /api/assets/import returns 201 on new file", async () => {
     const res = await app.inject({
@@ -215,6 +219,78 @@ describe("Asset Import API", () => {
     const body = res.json<{ status: string; trashedAt: string | null }>();
     expect(body.status).toBe("active");
     expect(body.trashedAt).toBeNull();
+  });
+
+  it("DELETE /api/assets/:id removes a trashed asset from the library without deleting the source file", async () => {
+    const trashRes = await app.inject({
+      method: "POST",
+      url: `/api/assets/${assetId}/trash`,
+    });
+    expect(trashRes.statusCode).toBe(200);
+
+    const removeRes = await app.inject({
+      method: "DELETE",
+      url: `/api/assets/${assetId}`,
+    });
+    expect(removeRes.statusCode).toBe(204);
+    expect(fs.existsSync(tempFile)).toBe(true);
+
+    const getRes = await app.inject({ method: "GET", url: `/api/assets/${assetId}` });
+    expect(getRes.statusCode).toBe(404);
+  });
+
+  it("DELETE /api/assets/:id/permanent rejects imported assets", async () => {
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: { filePath: tempFile2, type: "other", name: "Imported Again" },
+    });
+    const importedId = importRes.json<{ asset: { id: string } }>().asset.id;
+
+    const trashRes = await app.inject({
+      method: "POST",
+      url: `/api/assets/${importedId}/trash`,
+    });
+    expect(trashRes.statusCode).toBe(200);
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/assets/${importedId}/permanent`,
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ code: string }>().code).toBe("PERMANENT_DELETE_FORBIDDEN");
+    expect(fs.existsSync(tempFile2)).toBe(true);
+  });
+
+  it("DELETE /api/assets/:id/permanent deletes generated assets and files", async () => {
+    const repo = createAssetRepository(getDb(DB_PATH), getSqlite());
+    const created = repo.create({
+      name: "Generated asset",
+      type: "other",
+      filePath: generatedFile,
+      fileSize: fs.statSync(generatedFile).size,
+      mimeType: "text/plain",
+      contentHash: `generated-${ts}`,
+      origin: "generated",
+    });
+    generatedAssetId = created.id;
+
+    const trashRes = await app.inject({
+      method: "POST",
+      url: `/api/assets/${generatedAssetId}/trash`,
+    });
+    expect(trashRes.statusCode).toBe(200);
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/assets/${generatedAssetId}/permanent`,
+    });
+
+    expect(res.statusCode).toBe(204);
+    expect(fs.existsSync(generatedFile)).toBe(false);
+    const getRes = await app.inject({ method: "GET", url: `/api/assets/${generatedAssetId}` });
+    expect(getRes.statusCode).toBe(404);
   });
 
   it("PATCH /api/assets/:id returns 400 on empty update", async () => {

@@ -1,6 +1,6 @@
 export { createProjectService } from "./project/project.service.js";
 export type { ProjectService } from "./project/project.service.js";
-export { createAssetService, AssetImportError } from "./asset/asset.service.js";
+export { createAssetService, AssetImportError, AssetDeleteError } from "./asset/asset.service.js";
 export type { AssetService } from "./asset/asset.service.js";
 export { computeFileHash } from "./asset/file.utils.js";
 export { createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError } from "./generation/generation.service.js";

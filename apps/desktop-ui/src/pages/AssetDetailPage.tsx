@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AssetResponse, ProjectResponse } from "@starline/shared";
-import { useRestoreAsset, useTrashAsset, useUpdateAsset } from "../hooks/useAsset.js";
+import {
+  usePermanentlyDeleteAsset,
+  useRemoveAsset,
+  useRestoreAsset,
+  useTrashAsset,
+  useUpdateAsset,
+} from "../hooks/useAsset.js";
 import { useI18n } from "../lib/i18n.js";
 import { assetsApi } from "../lib/api.js";
 
@@ -13,12 +19,22 @@ interface Props {
   onBack: () => void;
   onMovedToTrash: () => void;
   onRestored: () => void;
+  onRemovedFromLibrary: () => void;
+  onPermanentlyDeleted: () => void;
 }
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getTrashMeta(asset: AssetResponse): { purgeAt: Date; daysRemaining: number } | null {
+  if (!asset.trashedAt) return null;
+  const trashedAt = new Date(asset.trashedAt);
+  const purgeAt = new Date(trashedAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const daysRemaining = Math.max(0, Math.ceil((purgeAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)));
+  return { purgeAt, daysRemaining };
 }
 
 function AssetPreview({ asset }: { asset: AssetResponse }) {
@@ -144,15 +160,20 @@ export default function AssetDetailPage({
   onBack,
   onMovedToTrash,
   onRestored,
+  onRemovedFromLibrary,
+  onPermanentlyDeleted,
 }: Props) {
   const { locale, text, formatAssetType, formatVisibility } = useI18n();
   const updateAsset = useUpdateAsset();
   const trashAsset = useTrashAsset();
   const restoreAsset = useRestoreAsset();
+  const removeAsset = useRemoveAsset();
+  const permanentlyDeleteAsset = usePermanentlyDeleteAsset();
   const [visibility, setVisibility] = useState<"public" | "private">("public");
   const [projectId, setProjectId] = useState("");
   const [saveNotice, setSaveNotice] = useState<"idle" | "saved" | "failed">("idle");
   const [trashNotice, setTrashNotice] = useState<"idle" | "failed">("idle");
+  const [dangerNotice, setDangerNotice] = useState<"idle" | "removeFailed" | "permanentFailed">("idle");
 
   useEffect(() => {
     if (asset) {
@@ -160,6 +181,7 @@ export default function AssetDetailPage({
       setProjectId(asset.projectId ?? "");
       setSaveNotice("idle");
       setTrashNotice("idle");
+      setDangerNotice("idle");
     }
   }, [asset]);
 
@@ -167,29 +189,52 @@ export default function AssetDetailPage({
     () => projects.find((item) => item.id === asset?.projectId) ?? null,
     [asset?.projectId, projects],
   );
+  const trashMeta = asset ? getTrashMeta(asset) : null;
 
   const visibilityDirty = asset ? visibility !== asset.visibility : false;
   const projectDirty = asset ? projectId !== (asset.projectId ?? "") : false;
   const saveDirty = visibilityDirty || projectDirty;
-  const moveToTrashLabel = locale === "zh-CN" ? "移入回收站" : "Move to trash";
-  const restoreLabel = locale === "zh-CN" ? "恢复资产" : "Restore asset";
-  const trashStatusLabel = locale === "zh-CN" ? "回收站" : "Trash";
-  const importedOriginLabel = locale === "zh-CN" ? "导入资源" : "Imported";
-  const generatedOriginLabel = locale === "zh-CN" ? "生成资源" : "Generated";
-  const assetAssociationHelp =
-    text.assetProjectHelp ??
-    (locale === "zh-CN"
-      ? "将这个资产关联到某个项目，或者清空项目关联。"
-      : "Associate this asset with a project, or clear the project link.");
-  const saveChangesLabel = text.saveChanges ?? (locale === "zh-CN" ? "保存更改" : "Save changes");
-  const savingLabel = text.saving ?? (locale === "zh-CN" ? "保存中..." : "Saving...");
-  const saveSuccessLabel = text.assetVisibilitySaved ?? (locale === "zh-CN" ? "资产设置已保存。" : "Asset settings saved.");
-  const saveFailedLabel = text.assetVisibilitySaveFailed ?? (locale === "zh-CN" ? "保存资产设置失败。" : "Failed to save asset settings.");
-  const confirmTrashText = locale === "zh-CN" ? "确定将这个资产移入回收站吗？" : "Move this asset to the trash?";
-  const originLabel = locale === "zh-CN" ? "来源" : "Origin";
-  const trashedAtLabel = locale === "zh-CN" ? "移入回收站时间" : "Trashed at";
-  const trashFailedLabel = locale === "zh-CN" ? "移入回收站失败，请重试。" : "Failed to move asset to the recycle bin.";
-  const restoreFailedLabel = locale === "zh-CN" ? "恢复资产失败，请重试。" : "Failed to restore asset.";
+
+  const labels = {
+    moveToTrash: locale === "zh-CN" ? "移入回收站" : "Move to trash",
+    restore: locale === "zh-CN" ? "恢复资产" : "Restore asset",
+    trashStatus: locale === "zh-CN" ? "回收站" : "Trash",
+    importedOrigin: locale === "zh-CN" ? "用户导入" : "Imported",
+    generatedOrigin: locale === "zh-CN" ? "平台生成" : "Generated",
+    assetAssociationHelp:
+      text.assetProjectHelp ??
+      (locale === "zh-CN"
+        ? "将此资产关联到某个项目，或清空当前项目关联。"
+        : "Associate this asset with a project, or clear the project link."),
+    saveChanges: text.saveChanges ?? (locale === "zh-CN" ? "保存更改" : "Save changes"),
+    saving: text.saving ?? (locale === "zh-CN" ? "保存中..." : "Saving..."),
+    saveSuccess: text.assetVisibilitySaved ?? (locale === "zh-CN" ? "资产设置已保存。" : "Asset settings saved."),
+    saveFailed: text.assetVisibilitySaveFailed ?? (locale === "zh-CN" ? "保存资产设置失败。" : "Failed to save asset settings."),
+    confirmTrash: locale === "zh-CN" ? "确认将此资产移入回收站吗？" : "Move this asset to the trash?",
+    origin: locale === "zh-CN" ? "来源" : "Origin",
+    trashedAt: locale === "zh-CN" ? "移入回收站时间" : "Trashed at",
+    purgeAt: locale === "zh-CN" ? "自动清理时间" : "Auto purge",
+    daysRemaining:
+      trashMeta ? (locale === "zh-CN" ? `剩余 ${trashMeta.daysRemaining} 天` : `${trashMeta.daysRemaining} days remaining`) : "",
+    trashFailed: locale === "zh-CN" ? "移入回收站失败，请重试。" : "Failed to move asset to the recycle bin.",
+    restoreFailed: locale === "zh-CN" ? "恢复资产失败，请重试。" : "Failed to restore asset.",
+    removeFromLibrary: locale === "zh-CN" ? "从平台移除" : "Remove from library",
+    permanentlyDelete: locale === "zh-CN" ? "永久删除" : "Permanently delete",
+    removeConfirm:
+      locale === "zh-CN"
+        ? "确认从平台移除此资产记录吗？此操作不会删除 imported 原始文件。"
+        : "Remove this asset record from the library? Imported source files will not be deleted.",
+    permanentlyDeleteConfirm:
+      locale === "zh-CN"
+        ? "确认永久删除该 generated 资产及其本地文件吗？此操作不可恢复。"
+        : "Permanently delete this generated asset and its local file? This cannot be undone.",
+    removeFailed: locale === "zh-CN" ? "从平台移除资产失败。" : "Failed to remove asset from library.",
+    permanentlyDeleteFailed: locale === "zh-CN" ? "永久删除资产失败。" : "Failed to permanently delete asset.",
+    trashInfo:
+      locale === "zh-CN"
+        ? "回收站中的资产会保留 30 天。generated 资产到期后会删除本地文件，imported 资产只会删除平台记录。"
+        : "Trash keeps assets for 30 days. Generated assets delete local files on expiry; imported assets only lose the library record.",
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -271,7 +316,7 @@ export default function AssetDetailPage({
                   </span>
                   {asset.status === "trashed" && (
                     <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
-                      {trashStatusLabel}
+                      {labels.trashStatus}
                     </span>
                   )}
                 </div>
@@ -279,21 +324,55 @@ export default function AssetDetailPage({
 
               <div className="mt-4 flex flex-wrap gap-3">
                 {asset.status === "trashed" ? (
-                  <button
-                    onClick={() =>
-                      restoreAsset.mutate(asset.id, {
-                        onSuccess: () => onRestored(),
-                        onError: () => setTrashNotice("failed"),
-                      })}
-                    disabled={restoreAsset.isPending}
-                    className="rounded border border-green-300 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
-                  >
-                    {restoreLabel}
-                  </button>
+                  <>
+                    <button
+                      onClick={() =>
+                        restoreAsset.mutate(asset.id, {
+                          onSuccess: () => onRestored(),
+                          onError: () => setTrashNotice("failed"),
+                        })}
+                      disabled={restoreAsset.isPending}
+                      className="rounded border border-green-300 px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+                    >
+                      {labels.restore}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const confirmed = window.confirm(labels.removeConfirm);
+                        if (!confirmed) return;
+                        setDangerNotice("idle");
+                        removeAsset.mutate(asset.id, {
+                          onSuccess: () => onRemovedFromLibrary(),
+                          onError: () => setDangerNotice("removeFailed"),
+                        });
+                      }}
+                      disabled={removeAsset.isPending}
+                      className="rounded border border-amber-300 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                    >
+                      {labels.removeFromLibrary}
+                    </button>
+                    {asset.origin === "generated" && (
+                      <button
+                        onClick={() => {
+                          const confirmed = window.confirm(labels.permanentlyDeleteConfirm);
+                          if (!confirmed) return;
+                          setDangerNotice("idle");
+                          permanentlyDeleteAsset.mutate(asset.id, {
+                            onSuccess: () => onPermanentlyDeleted(),
+                            onError: () => setDangerNotice("permanentFailed"),
+                          });
+                        }}
+                        disabled={permanentlyDeleteAsset.isPending}
+                        className="rounded border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {labels.permanentlyDelete}
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <button
                     onClick={() => {
-                      const confirmed = window.confirm(confirmTrashText);
+                      const confirmed = window.confirm(labels.confirmTrash);
                       if (!confirmed) return;
                       setTrashNotice("idle");
                       trashAsset.mutate(asset.id, {
@@ -304,14 +383,40 @@ export default function AssetDetailPage({
                     disabled={trashAsset.isPending}
                     className="rounded border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                   >
-                    {moveToTrashLabel}
+                    {labels.moveToTrash}
                   </button>
                 )}
               </div>
+
               {trashNotice === "failed" && (
                 <p className="mt-3 text-sm text-red-600">
-                  {asset.status === "trashed" ? restoreFailedLabel : trashFailedLabel}
+                  {asset.status === "trashed" ? labels.restoreFailed : labels.trashFailed}
                 </p>
+              )}
+              {dangerNotice === "removeFailed" && (
+                <p className="mt-3 text-sm text-red-600">{labels.removeFailed}</p>
+              )}
+              {dangerNotice === "permanentFailed" && (
+                <p className="mt-3 text-sm text-red-600">{labels.permanentlyDeleteFailed}</p>
+              )}
+
+              {asset.status === "trashed" && trashMeta && (
+                <div className="mt-6 rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-800">
+                  <p>{labels.trashInfo}</p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <div>
+                      <span className="font-medium">{labels.trashedAt}:</span>{" "}
+                      {new Date(asset.trashedAt!).toLocaleString()}
+                    </div>
+                    <div>
+                      <span className="font-medium">{labels.purgeAt}:</span>{" "}
+                      {trashMeta.purgeAt.toLocaleString()}
+                    </div>
+                    <div>
+                      <span className="font-medium">{labels.daysRemaining}</span>
+                    </div>
+                  </div>
+                </div>
               )}
 
               <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -324,7 +429,7 @@ export default function AssetDetailPage({
                       setSaveNotice("idle");
                     }}
                     className="mt-2 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={updateAsset.isPending}
+                    disabled={updateAsset.isPending || asset.status === "trashed"}
                   >
                     <option value="">{text.noProject}</option>
                     {projects.map((item) => (
@@ -334,7 +439,7 @@ export default function AssetDetailPage({
                     ))}
                   </select>
                 </label>
-                <p className="mt-2 text-xs text-gray-500">{assetAssociationHelp}</p>
+                <p className="mt-2 text-xs text-gray-500">{labels.assetAssociationHelp}</p>
               </div>
 
               <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -347,7 +452,7 @@ export default function AssetDetailPage({
                       setSaveNotice("idle");
                     }}
                     className="mt-2 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    disabled={updateAsset.isPending}
+                    disabled={updateAsset.isPending || asset.status === "trashed"}
                   >
                     <option value="public">{formatVisibility("public")}</option>
                     <option value="private">{formatVisibility("private")}</option>
@@ -370,13 +475,13 @@ export default function AssetDetailPage({
                         },
                       );
                     }}
-                    disabled={!saveDirty || updateAsset.isPending}
+                    disabled={!saveDirty || updateAsset.isPending || asset.status === "trashed"}
                     className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
                   >
-                    {updateAsset.isPending ? savingLabel : saveChangesLabel}
+                    {updateAsset.isPending ? labels.saving : labels.saveChanges}
                   </button>
-                  {saveNotice === "saved" && <span className="text-sm text-green-700">{saveSuccessLabel}</span>}
-                  {saveNotice === "failed" && <span className="text-sm text-red-600">{saveFailedLabel}</span>}
+                  {saveNotice === "saved" && <span className="text-sm text-green-700">{labels.saveSuccess}</span>}
+                  {saveNotice === "failed" && <span className="text-sm text-red-600">{labels.saveFailed}</span>}
                 </div>
               </div>
             </div>
@@ -397,11 +502,11 @@ export default function AssetDetailPage({
                 </div>
                 <div>
                   <dt className="text-gray-500">{text.statusLabel}</dt>
-                  <dd className="mt-1 text-gray-900">{asset.status === "trashed" ? trashStatusLabel : asset.status}</dd>
+                  <dd className="mt-1 text-gray-900">{asset.status === "trashed" ? labels.trashStatus : asset.status}</dd>
                 </div>
                 <div>
-                  <dt className="text-gray-500">{originLabel}</dt>
-                  <dd className="mt-1 text-gray-900">{asset.origin === "generated" ? generatedOriginLabel : importedOriginLabel}</dd>
+                  <dt className="text-gray-500">{labels.origin}</dt>
+                  <dd className="mt-1 text-gray-900">{asset.origin === "generated" ? labels.generatedOrigin : labels.importedOrigin}</dd>
                 </div>
                 <div>
                   <dt className="text-gray-500">{text.mimeTypeLabel}</dt>
@@ -409,9 +514,21 @@ export default function AssetDetailPage({
                 </div>
                 {asset.trashedAt && (
                   <div>
-                    <dt className="text-gray-500">{trashedAtLabel}</dt>
+                    <dt className="text-gray-500">{labels.trashedAt}</dt>
                     <dd className="mt-1 text-gray-900">{new Date(asset.trashedAt).toLocaleString()}</dd>
                   </div>
+                )}
+                {trashMeta && (
+                  <>
+                    <div>
+                      <dt className="text-gray-500">{labels.purgeAt}</dt>
+                      <dd className="mt-1 text-gray-900">{trashMeta.purgeAt.toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-gray-500">{locale === "zh-CN" ? "剩余时间" : "Remaining"}</dt>
+                      <dd className="mt-1 text-gray-900">{labels.daysRemaining}</dd>
+                    </div>
+                  </>
                 )}
                 <div>
                   <dt className="text-gray-500">{text.created}</dt>
