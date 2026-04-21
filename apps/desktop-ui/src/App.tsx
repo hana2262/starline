@@ -5,6 +5,7 @@ import ProjectDetailPage from "./pages/ProjectDetailPage.js";
 import AssetDetailPage from "./pages/AssetDetailPage.js";
 import ConnectorsPage from "./pages/ConnectorsPage.js";
 import AgentPage from "./pages/AgentPage.js";
+import AgentSessionsPage from "./pages/AgentSessionsPage.js";
 import AnalyticsPage from "./pages/AnalyticsPage.js";
 import AppNav from "./components/AppNav.js";
 import { useProjects } from "./hooks/useProjects.js";
@@ -13,7 +14,7 @@ import { useAsset } from "./hooks/useAsset.js";
 import { useI18n } from "./lib/i18n.js";
 import { HEALTH_URL } from "./lib/runtime.js";
 
-type RootView = "projects" | "assets" | "connectors" | "agent" | "analytics" | "project-detail" | "asset-detail";
+type RootView = "projects" | "assets" | "connectors" | "agent" | "agent-sessions" | "analytics" | "project-detail" | "asset-detail";
 type BootStatus = "checking" | "ready" | "failed";
 type AssetBackView = "assets" | "project-detail";
 type AssetBrowserStatus = "active" | "trashed" | "all";
@@ -23,6 +24,7 @@ export default function App() {
   const [view, setView] = useState<RootView>("projects");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [selectedAgentSessionId, setSelectedAgentSessionId] = useState<string | null>(null);
   const [assetBackView, setAssetBackView] = useState<AssetBackView>("assets");
   const [assetBrowserStatus, setAssetBrowserStatus] = useState<AssetBrowserStatus>("active");
   const [bootStatus, setBootStatus] = useState<BootStatus>("checking");
@@ -35,6 +37,7 @@ export default function App() {
     if (view === "assets") return "assets";
     if (view === "connectors") return "connectors";
     if (view === "agent") return "agent";
+    if (view === "agent-sessions") return "agent";
     if (view === "analytics") return "analytics";
     return "projects";
   }, [view]);
@@ -118,7 +121,30 @@ export default function App() {
     }
 
     if (view === "agent") {
-      return <AgentPage apiReady={apiReady} projects={projects.data ?? []} />;
+      return (
+        <AgentPage
+          apiReady={apiReady}
+          projects={projects.data ?? []}
+          sessionId={selectedAgentSessionId}
+          onSessionChange={setSelectedAgentSessionId}
+          onOpenHistory={() => setView("agent-sessions")}
+        />
+      );
+    }
+
+    if (view === "agent-sessions") {
+      return (
+        <AgentSessionsPage
+          apiReady={apiReady}
+          projects={projects.data ?? []}
+          activeSessionId={selectedAgentSessionId}
+          onBack={() => setView("agent")}
+          onOpenSession={(sessionId) => {
+            setSelectedAgentSessionId(sessionId);
+            setView("agent");
+          }}
+        />
+      );
     }
 
     if (view === "analytics") {

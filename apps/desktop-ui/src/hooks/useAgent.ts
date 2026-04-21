@@ -17,6 +17,14 @@ export function useAgentSession(sessionId: string | null, enabled = true) {
   });
 }
 
+export function useAgentSessions(enabled = true) {
+  return useQuery({
+    queryKey: ["agent", "sessions"],
+    queryFn: () => agentApi.listSessions(),
+    enabled,
+  });
+}
+
 export function useAgentQuery() {
   return useMutation({
     mutationFn: (input: AgentQueryInput) => agentApi.query(input),

@@ -3,6 +3,11 @@ import type { AgentService } from "@starline/domain";
 import { AgentQuerySchema } from "@starline/shared";
 
 export function registerAgentRoutes(app: FastifyInstance, agentService: AgentService) {
+  app.get("/api/agent/sessions", async (_req, reply) => {
+    const result = agentService.listSessions();
+    return reply.code(200).send(result);
+  });
+
   app.post("/api/agent/query", async (req, reply) => {
     const input = AgentQuerySchema.parse(req.body);
     const result = agentService.query(input);

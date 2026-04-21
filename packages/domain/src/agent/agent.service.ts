@@ -165,6 +165,12 @@ export function createAgentService(
   eventRepo?: EventRepository,
 ) {
   return {
+    listSessions() {
+      return {
+        sessions: agentRepo.listSessions(),
+      };
+    },
+
     query(input: AgentQueryInput): AgentQueryResult {
       const existingSession = input.sessionId ? agentRepo.getSessionById(input.sessionId) : undefined;
       if (input.sessionId && !existingSession) {

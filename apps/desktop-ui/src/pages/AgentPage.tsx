@@ -6,12 +6,15 @@ import { useI18n } from "../lib/i18n.js";
 interface Props {
   apiReady: boolean;
   projects: ProjectResponse[];
+  sessionId: string | null;
+  onSessionChange: (sessionId: string | null) => void;
+  onOpenHistory: () => void;
 }
 
 function transcriptTone(role: "user" | "assistant"): string {
   return role === "assistant"
-    ? "bg-slate-900 text-white border-slate-900"
-    : "bg-white text-slate-900 border-slate-200";
+    ? "border-slate-900 bg-slate-900 text-white"
+    : "border-slate-200 bg-white text-slate-900";
 }
 
 function mergeRelatedAssets(existing: AgentAssetReference[], incoming: AgentAssetReference[]): AgentAssetReference[] {
@@ -27,9 +30,14 @@ function mergeRelatedAssets(existing: AgentAssetReference[], incoming: AgentAsse
   return merged;
 }
 
-export default function AgentPage({ apiReady, projects }: Props) {
-  const { text, formatAssetType } = useI18n();
-  const [sessionId, setSessionId] = useState<string | null>(null);
+export default function AgentPage({
+  apiReady,
+  projects,
+  sessionId,
+  onSessionChange,
+  onOpenHistory,
+}: Props) {
+  const { locale, text, formatAssetType } = useI18n();
   const [draft, setDraft] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [allowPrivateForThisQuery, setAllowPrivateForThisQuery] = useState(false);
@@ -64,7 +72,7 @@ export default function AgentPage({ apiReady, projects }: Props) {
     });
 
     setDraft("");
-    setSessionId(result.session.id);
+    onSessionChange(result.session.id);
     setSelectedProjectId(result.session.projectId ?? selectedProjectId);
     setLastSnapshot((current) => {
       if (current && current.session.id === result.session.id) {
@@ -86,7 +94,7 @@ export default function AgentPage({ apiReady, projects }: Props) {
   }
 
   function startNewSession() {
-    setSessionId(null);
+    onSessionChange(null);
     setDraft("");
     setAllowPrivateForThisQuery(false);
     setLastSnapshot(null);
@@ -95,22 +103,32 @@ export default function AgentPage({ apiReady, projects }: Props) {
   const messages = effectiveSnapshot?.messages ?? [];
   const relatedAssets = effectiveSnapshot?.relatedAssets ?? [];
 
+  const copy = {
+    history: locale === "zh-CN" ? "查看历史会话" : "Open history",
+    send: locale === "zh-CN" ? "发送给 Agent" : "Send to Agent",
+    sessionCode: locale === "zh-CN" ? "当前会话" : "Session",
+  };
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">{text.agentTitle}</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {text.agentSubtitle}
-          </p>
+          <p className="mt-1 text-sm text-slate-500">{text.agentSubtitle}</p>
         </div>
         <div className="flex items-center gap-3">
           {sessionId && (
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-right">
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{text.session}</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">{copy.sessionCode}</p>
               <p className="text-sm font-medium text-slate-700">{sessionId.slice(0, 8)}</p>
             </div>
           )}
+          <button
+            onClick={onOpenHistory}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            {copy.history}
+          </button>
           <button
             onClick={startNewSession}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -122,75 +140,80 @@ export default function AgentPage({ apiReady, projects }: Props) {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.9fr)]">
         <section className="rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-5 shadow-sm">
-          <div className="flex flex-wrap items-end gap-4 rounded-2xl border border-slate-200 bg-white p-4">
-            <label className="min-w-[220px] flex-1">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{text.projectScope}</span>
-              <select
-                value={selectedProjectId}
-                onChange={(event) => setSelectedProjectId(event.target.value)}
-                disabled={Boolean(sessionId)}
-                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
-              >
-                <option value="">{text.allLocalAssets}</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="min-w-[280px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    {text.agentPrivateAccessLabel}
-                  </p>
-                  <p className="mt-2 text-sm font-medium text-slate-900">
-                    {text.agentPrivateAccessTitle}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {allowPrivateForThisQuery
-                      ? text.agentPrivateAccessEnabledBody
-                      : text.agentPrivateAccessDisabledBody}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setAllowPrivateForThisQuery((current) => !current)}
-                  className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors ${
-                    allowPrivateForThisQuery ? "bg-amber-500" : "bg-slate-300"
-                  }`}
-                  aria-pressed={allowPrivateForThisQuery}
-                  title={text.agentPrivateAccessToggle}
+          <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <label className="min-w-[220px] flex-1">
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{text.projectScope}</span>
+                <select
+                  value={selectedProjectId}
+                  onChange={(event) => setSelectedProjectId(event.target.value)}
+                  disabled={Boolean(sessionId)}
+                  className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-slate-50"
                 >
-                  <span
-                    className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                      allowPrivateForThisQuery ? "translate-x-6" : "translate-x-1"
-                    }`}
-                  />
-                </button>
-              </div>
-            </label>
+                  <option value="">{text.allLocalAssets}</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <label className="min-w-[280px] flex-[2]">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{text.askAgent}</span>
+              <label className="min-w-[280px] rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      {text.agentPrivateAccessLabel}
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900">
+                      {text.agentPrivateAccessTitle}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {allowPrivateForThisQuery
+                        ? text.agentPrivateAccessEnabledBody
+                        : text.agentPrivateAccessDisabledBody}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAllowPrivateForThisQuery((current) => !current)}
+                    className={`relative inline-flex h-7 w-12 shrink-0 rounded-full transition-colors ${
+                      allowPrivateForThisQuery ? "bg-amber-500" : "bg-slate-300"
+                    }`}
+                    aria-pressed={allowPrivateForThisQuery}
+                    title={text.agentPrivateAccessToggle}
+                  >
+                    <span
+                      className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                        allowPrivateForThisQuery ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </label>
+            </div>
+
+            <div className="relative">
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder={text.askAgentPlaceholder}
-                rows={3}
-                className="mt-2 w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+                rows={4}
+                className="w-full resize-none rounded-2xl border border-slate-300 bg-white px-4 py-4 pr-20 text-sm text-slate-900 outline-none focus:border-blue-500"
               />
-            </label>
-
-            <button
-              onClick={() => void submitQuery()}
-              disabled={!apiReady || sendQuery.isPending || draft.trim().length === 0}
-              className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {sendQuery.isPending ? text.running : text.askAgentAction}
-            </button>
+              <button
+                onClick={() => void submitQuery()}
+                disabled={!apiReady || sendQuery.isPending || draft.trim().length === 0}
+                className="absolute bottom-4 right-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                title={copy.send}
+                aria-label={copy.send}
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 18V6" />
+                  <path d="M7 11l5-5 5 5" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           {sendQuery.isError && (
@@ -216,9 +239,7 @@ export default function AgentPage({ apiReady, projects }: Props) {
             {messages.length === 0 && (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
                 <p className="text-sm font-medium text-slate-700">{text.noSessionTitle}</p>
-                <p className="mt-2 text-sm text-slate-500">
-                  {text.noSessionBody}
-                </p>
+                <p className="mt-2 text-sm text-slate-500">{text.noSessionBody}</p>
               </div>
             )}
             {messages.map((message) => (
@@ -247,8 +268,7 @@ export default function AgentPage({ apiReady, projects }: Props) {
               {effectiveSnapshot?.project?.name ?? text.globalLibrary}
             </h3>
             <p className="mt-2 text-sm text-slate-500">
-              {effectiveSnapshot?.project?.description
-                ?? text.globalLibraryBody}
+              {effectiveSnapshot?.project?.description ?? text.globalLibraryBody}
             </p>
             {effectiveSnapshot?.session && (
               <dl className="mt-4 space-y-2 text-sm text-slate-600">

@@ -16,6 +16,7 @@ import type {
   ConnectorHealthResponse,
   AgentQueryInput,
   AgentQueryResult,
+  AgentSessionListResult,
   AgentSessionResult,
   AnalyticsOverview,
   AnalyticsUsage,
@@ -136,6 +137,7 @@ export const connectorsApi = {
 };
 
 export const agentApi = {
+  listSessions: () => request<AgentSessionListResult>("/agent/sessions"),
   query: (input: AgentQueryInput) =>
     request<AgentQueryResult>("/agent/query", {
       method: "POST",

@@ -52,6 +52,14 @@ export function createAgentRepository(db: Db) {
       return db.select().from(agentSessions).where(eq(agentSessions.id, id)).get();
     },
 
+    listSessions(): AgentSession[] {
+      return db.select()
+        .from(agentSessions)
+        .orderBy(asc(agentSessions.updatedAt), asc(agentSessions.id))
+        .all()
+        .reverse();
+    },
+
     touchSession(id: string): AgentSession | undefined {
       db.update(agentSessions)
         .set({ updatedAt: now() })

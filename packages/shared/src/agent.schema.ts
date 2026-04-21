@@ -42,6 +42,11 @@ export const AgentSessionSchema = z.object({
 });
 export type AgentSession = z.infer<typeof AgentSessionSchema>;
 
+export const AgentSessionListResultSchema = z.object({
+  sessions: z.array(AgentSessionSchema),
+});
+export type AgentSessionListResult = z.infer<typeof AgentSessionListResultSchema>;
+
 export const AgentQueryResultSchema = z.object({
   session: AgentSessionSchema,
   userMessage: AgentMessageSchema,

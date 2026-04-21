@@ -256,4 +256,37 @@ describe("Agent API", () => {
 
     expect(res.statusCode).toBe(404);
   });
+
+  it("lists persisted sessions ordered by most recent update", async () => {
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/agent/query",
+      payload: {
+        query: "first session",
+      },
+    });
+    expect(first.statusCode).toBe(200);
+    const firstSessionId = first.json<{ session: { id: string } }>().session.id;
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/agent/query",
+      payload: {
+        query: "second session",
+      },
+    });
+    expect(second.statusCode).toBe(200);
+    const secondSessionId = second.json<{ session: { id: string } }>().session.id;
+
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/api/agent/sessions",
+    });
+
+    expect(listRes.statusCode).toBe(200);
+    const body = listRes.json<{ sessions: Array<{ id: string }> }>();
+    expect(body.sessions.length).toBeGreaterThanOrEqual(2);
+    expect(body.sessions[0]?.id).toBe(secondSessionId);
+    expect(body.sessions.some((session) => session.id === firstSessionId)).toBe(true);
+  });
 });
