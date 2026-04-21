@@ -69,7 +69,7 @@ export default function AssetList({
           <article key={asset.id} className="rounded-lg border border-gray-200 bg-white p-4">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                {selectable && asset.status === "active" && (
+                {selectable && (
                   <label className="mb-2 flex items-center gap-2 text-sm text-gray-600">
                     <input
                       type="checkbox"

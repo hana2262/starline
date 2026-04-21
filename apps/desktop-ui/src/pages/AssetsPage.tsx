@@ -91,7 +91,9 @@ export default function AssetsPage({
     );
   }
 
-  const canSelectForTrash = selectedStatus === "active";
+  const canSelectActive = selectedStatus === "active";
+  const canSelectTrash = selectedStatus === "trashed";
+  const canSelect = canSelectActive || canSelectTrash;
   const assetManageHint = locale === "zh-CN"
     ? "在这里导入、筛选、查看资产，并先将不需要的内容移入回收站。"
     : "Import, filter, inspect assets, and move unneeded items into the recycle bin first.";
@@ -110,9 +112,13 @@ export default function AssetsPage({
   const allViewLabel = locale === "zh-CN" ? "全部" : "All";
   const movedToTrashNotice = locale === "zh-CN" ? "资产已移入回收站。" : "Assets moved to the recycle bin.";
   const restoredNotice = locale === "zh-CN" ? "资产已恢复到资产库。" : "Asset restored to the library.";
+  const restoredBatchNotice = locale === "zh-CN" ? "所选资产已恢复到资产库。" : "Selected assets restored to the library.";
   const removeNotice = locale === "zh-CN"
     ? "资产记录已从平台移除，原始文件未删除。"
     : "Asset record removed from the library. Original files were not deleted.";
+  const removedBatchNotice = locale === "zh-CN"
+    ? "所选资产记录已从平台移除，原始文件未删除。"
+    : "Selected asset records removed from the library. Original files were not deleted.";
   const permanentDeleteNotice = locale === "zh-CN"
     ? "已永久删除平台生成资产及其本地文件。"
     : "Generated asset and its local file were permanently deleted.";
@@ -122,9 +128,16 @@ export default function AssetsPage({
   const removeConfirmText = locale === "zh-CN"
     ? "确认从平台移除此资产记录吗？此操作不会删除 imported 原始文件。"
     : "Remove this asset record from the library? Imported source files will not be deleted.";
+  const removeSelectedConfirmText = locale === "zh-CN"
+    ? `确认从平台移除这 ${selectedIds.length} 项资产记录吗？此操作不会删除 imported 原始文件。`
+    : `Remove ${selectedIds.length} selected asset records from the library? Imported source files will not be deleted.`;
   const permanentDeleteConfirmText = locale === "zh-CN"
     ? "确认永久删除该 generated 资产及其本地文件吗？此操作不可恢复。"
     : "Permanently delete this generated asset and its local file? This cannot be undone.";
+  const restoreSelectedLabel = locale === "zh-CN" ? "批量恢复" : "Restore selected";
+  const restoringSelectedLabel = locale === "zh-CN" ? "正在恢复..." : "Restoring...";
+  const removeSelectedLabel = locale === "zh-CN" ? "批量从平台移除" : "Remove selected from library";
+  const removingSelectedLabel = locale === "zh-CN" ? "正在移除..." : "Removing...";
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -186,7 +199,7 @@ export default function AssetsPage({
         </div>
       )}
 
-      {canSelectForTrash && (
+      {canSelect && (
         <div className="flex justify-end">
           <button
             onClick={() => {
@@ -204,27 +217,67 @@ export default function AssetsPage({
         </div>
       )}
 
-      {selectionMode && canSelectForTrash && (
+      {selectionMode && canSelect && (
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="text-sm text-gray-500">{selectedAssetsLabel}</span>
-            <button
-              onClick={() => {
-                if (selectedIds.length === 0) return;
-                const confirmed = window.confirm(trashConfirmText);
-                if (!confirmed) return;
-                Promise.all(selectedIds.map((id) => trashAsset.mutateAsync(id)))
-                  .then(() => {
-                    resetSelection();
-                    setActionNotice(movedToTrashNotice);
-                  })
-                  .catch(() => setActionNotice(trashActionFailed));
-              }}
-              disabled={selectedIds.length === 0 || trashAsset.isPending}
-              className="rounded border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {trashAsset.isPending ? movingToTrashLabel : moveToTrashLabel}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              {canSelectActive && (
+                <button
+                  onClick={() => {
+                    if (selectedIds.length === 0) return;
+                    const confirmed = window.confirm(trashConfirmText);
+                    if (!confirmed) return;
+                    Promise.all(selectedIds.map((id) => trashAsset.mutateAsync(id)))
+                      .then(() => {
+                        resetSelection();
+                        setActionNotice(movedToTrashNotice);
+                      })
+                      .catch(() => setActionNotice(trashActionFailed));
+                  }}
+                  disabled={selectedIds.length === 0 || trashAsset.isPending}
+                  className="rounded border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {trashAsset.isPending ? movingToTrashLabel : moveToTrashLabel}
+                </button>
+              )}
+              {canSelectTrash && (
+                <>
+                  <button
+                    onClick={() => {
+                      if (selectedIds.length === 0) return;
+                      Promise.all(selectedIds.map((id) => restoreAsset.mutateAsync(id)))
+                        .then(() => {
+                          resetSelection();
+                          setActionNotice(restoredBatchNotice);
+                        })
+                        .catch(() => setActionNotice(trashActionFailed));
+                    }}
+                    disabled={selectedIds.length === 0 || restoreAsset.isPending}
+                    className="rounded border border-green-300 px-3 py-2 text-sm text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {restoreAsset.isPending ? restoringSelectedLabel : restoreSelectedLabel}
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (selectedIds.length === 0) return;
+                      const confirmed = window.confirm(removeSelectedConfirmText);
+                      if (!confirmed) return;
+                      Promise.all(selectedIds.map((id) => removeAsset.mutateAsync(id)))
+                        .then(() => {
+                          resetSelection();
+                          setActionNotice(removedBatchNotice);
+                        })
+                        .catch(() => setActionNotice(removeActionFailed));
+                    }}
+                    disabled={selectedIds.length === 0 || removeAsset.isPending}
+                    className="rounded border border-amber-300 px-3 py-2 text-sm text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {removeAsset.isPending ? removingSelectedLabel : removeSelectedLabel}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -245,7 +298,7 @@ export default function AssetsPage({
             result={result.data}
             onOpenAsset={onOpenAsset}
             projectNameById={projectNameById}
-            selectable={selectionMode && canSelectForTrash}
+            selectable={selectionMode && canSelect}
             selectedIds={selectedIds}
             onToggleSelected={toggleSelected}
             onRestoreAsset={(assetId) =>
