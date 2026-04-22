@@ -98,6 +98,42 @@ export const connectorSecrets = sqliteTable("connector_secrets", {
 export type ConnectorSecret = typeof connectorSecrets.$inferSelect;
 export type NewConnectorSecret = typeof connectorSecrets.$inferInsert;
 
+export const agentProviderConfigs = sqliteTable("agent_provider_configs", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull(),
+  provider: text("provider").notNull(),
+  vendor: text("vendor").notNull(),
+  protocol: text("protocol").notNull(),
+  label: text("label").notNull(),
+  note: text("note"),
+  website: text("website"),
+  baseUrl: text("base_url"),
+  model: text("model").notNull(),
+  temperature: text("temperature"),
+  maxOutputTokens: integer("max_output_tokens"),
+  isActive: integer("is_active", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => ({
+  slugIdx: uniqueIndex("agent_provider_configs_slug_idx").on(table.slug),
+  providerIdx: index("agent_provider_configs_provider_idx").on(table.provider),
+  vendorProtocolIdx: index("agent_provider_configs_vendor_protocol_idx").on(table.vendor, table.protocol),
+  activeIdx: index("agent_provider_configs_active_idx").on(table.isActive, table.updatedAt),
+}));
+
+export type AgentProviderConfig = typeof agentProviderConfigs.$inferSelect;
+export type NewAgentProviderConfig = typeof agentProviderConfigs.$inferInsert;
+
+export const agentProviderSecrets = sqliteTable("agent_provider_secrets", {
+  providerConfigId: text("provider_config_id").primaryKey(),
+  secret: text("secret").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
+
+export type AgentProviderSecret = typeof agentProviderSecrets.$inferSelect;
+export type NewAgentProviderSecret = typeof agentProviderSecrets.$inferInsert;
+
 export const agentSessions = sqliteTable("agent_sessions", {
   id: text("id").primaryKey(),
   projectId: text("project_id"),

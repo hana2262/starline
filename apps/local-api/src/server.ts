@@ -1,8 +1,9 @@
 import Fastify from "fastify";
 import type { FastifyBaseLogger } from "fastify";
 import path from "path";
-import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository, createConnectorConfigRepository, createConnectorSecretRepository, createAgentRepository, createEventRepository } from "@starline/storage";
-import { createProjectService, createAssetService, AssetImportError, AssetDeleteError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError, createAgentService, AgentError, createAnalyticsService, AnalyticsError } from "@starline/domain";
+import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository, createConnectorConfigRepository, createConnectorSecretRepository, createAgentRepository, createEventRepository, createAgentProviderConfigRepository, createAgentProviderSecretRepository } from "@starline/storage";
+import { createProjectService, createAssetService, AssetImportError, AssetDeleteError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError, createAgentService, AgentError, createAnalyticsService, AnalyticsError, createDefaultLLMProviderRegistry, createAgentProviderService, AgentProviderConfigError } from "@starline/domain";
+import type { LLMProviderConfig } from "@starline/domain";
 import { MockConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
 import { runMigrations } from "@starline/storage/src/migrate.js";
@@ -46,9 +47,58 @@ function isRecoverableTrashPurgeError(error: unknown): boolean {
   return error.message.includes("no such column") && error.message.includes("origin");
 }
 
+function resolveOptionalNumber(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function resolveAgentLLMConfig(env: NodeJS.ProcessEnv, override?: LLMProviderConfig): LLMProviderConfig | undefined {
+  if (override) return override;
+
+  const protocol = env["AGENT_LLM_PROVIDER"];
+  if (!protocol) return undefined;
+
+  if (protocol === "openai-compatible") {
+    const model = env["AGENT_LLM_MODEL"];
+    const baseUrl = env["AGENT_LLM_BASE_URL"];
+    const apiKey = env["AGENT_LLM_API_KEY"];
+    if (!model || !baseUrl || !apiKey) {
+      return undefined;
+    }
+
+    return {
+      vendor: "custom",
+      protocol,
+      model,
+      baseUrl,
+      apiKey,
+      temperature: resolveOptionalNumber(env["AGENT_LLM_TEMPERATURE"]),
+      maxOutputTokens: resolveOptionalNumber(env["AGENT_LLM_MAX_OUTPUT_TOKENS"]),
+    };
+  }
+
+  if (protocol === "mock") {
+    return {
+      vendor: "mock",
+      protocol,
+      model: env["AGENT_LLM_MODEL"] ?? "mock-agent-v1",
+      temperature: resolveOptionalNumber(env["AGENT_LLM_TEMPERATURE"]) ?? 0.2,
+      maxOutputTokens: resolveOptionalNumber(env["AGENT_LLM_MAX_OUTPUT_TOKENS"]) ?? 512,
+    };
+  }
+
+  return undefined;
+}
+
 export function buildServer(
   dbPath: string,
-  options?: { extraConnectors?: Map<string, Connector>; retryBaseMs?: number; generationConcurrency?: number },
+  options?: {
+    extraConnectors?: Map<string, Connector>;
+    retryBaseMs?: number;
+    generationConcurrency?: number;
+    agentLLMConfig?: LLMProviderConfig;
+  },
 ) {
   const app = Fastify({ logger: true });
 
@@ -94,6 +144,8 @@ export function buildServer(
   const connectorConfigRepo = createConnectorConfigRepository(db);
   const connectorSecretRepo = createConnectorSecretRepository(db);
   const agentRepo = createAgentRepository(db);
+  const agentProviderConfigRepo = createAgentProviderConfigRepository(db);
+  const agentProviderSecretRepo = createAgentProviderSecretRepository(db);
   const connectorConfigService = createConnectorConfigService(
     connectorConfigRepo,
     connectorSecretRepo,
@@ -132,7 +184,54 @@ export function buildServer(
     connectorRegistry, assetRepo, generationRepo, computeFileHash, appDataDir,
     { retryBaseMs: options?.retryBaseMs, concurrency: generationConcurrency, logger: app.log, eventRepo },
   );
-  const agentService = createAgentService(agentRepo, projectRepo, assetRepo, eventRepo);
+  const llmRegistry = createDefaultLLMProviderRegistry();
+  const agentProviderService = createAgentProviderService(agentProviderConfigRepo, agentProviderSecretRepo, llmRegistry);
+  const fallbackLLMConfig: LLMProviderConfig = {
+    vendor: "mock",
+    protocol: "mock",
+    model: "mock-agent-v1",
+    temperature: 0.2,
+    maxOutputTokens: 512,
+  };
+  const agentService = createAgentService(agentRepo, projectRepo, assetRepo, eventRepo, () => {
+    const activeHandle = agentProviderService.resolveActiveHandle();
+    if (activeHandle) {
+      return activeHandle;
+    }
+
+    const configuredLLM = resolveAgentLLMConfig(process.env, options?.agentLLMConfig);
+    if (configuredLLM) {
+      return llmRegistry.create(configuredLLM);
+    }
+
+    return llmRegistry.create(fallbackLLMConfig);
+  });
+  const activeProvider = agentProviderService.resolveActiveHandle();
+  if (activeProvider) {
+    app.log.info({
+      event: "agent.llm.active_provider",
+      vendor: activeProvider.config.vendor,
+      protocol: activeProvider.config.protocol,
+      model: activeProvider.config.model,
+    }, "agent llm provider loaded from active local config");
+  } else {
+    const configuredLLM = resolveAgentLLMConfig(process.env, options?.agentLLMConfig);
+    if (!configuredLLM) {
+      app.log.info({
+        event: "agent.llm.fallback",
+        vendor: fallbackLLMConfig.vendor,
+        protocol: fallbackLLMConfig.protocol,
+        model: fallbackLLMConfig.model,
+      }, "agent llm provider not configured, using mock fallback");
+    } else {
+      app.log.info({
+        event: "agent.llm.configured",
+        vendor: configuredLLM.vendor,
+        protocol: configuredLLM.protocol,
+        model: configuredLLM.model,
+      }, "agent llm provider configured from env");
+    }
+  }
   const analyticsService = createAnalyticsService(eventRepo);
 
   generationService.recoverPendingJobs();
@@ -150,7 +249,7 @@ export function buildServer(
   registerAssetRoutes(app, assetService);
   registerConnectorRoutes(app, connectorConfigService);
   registerGenerationRoutes(app, generationService);
-  registerAgentRoutes(app, agentService);
+  registerAgentRoutes(app, agentService, agentProviderService);
   registerAnalyticsRoutes(app, analyticsService);
 
   // Error handler: ConnectorError → 404/502; AssetImportError → 409/422; ZodError → 400; else → 500
@@ -176,6 +275,19 @@ export function buildServer(
         error: err.message,
         code: err.code,
         ...err.details,
+      });
+    }
+    if (err instanceof AgentProviderConfigError) {
+      const status =
+        err.code === "NOT_FOUND"
+          ? 404
+          : err.code === "UNSUPPORTED_PROTOCOL" || err.code === "ACTIVE_PROVIDER_DELETE_BLOCKED"
+            ? 409
+            : 400;
+      return reply.code(status).send({
+        error: err.message,
+        code: err.code,
+        providerConfigId: err.providerConfigId,
       });
     }
     if (err instanceof AnalyticsError) {

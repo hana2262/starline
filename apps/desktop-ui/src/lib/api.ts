@@ -16,6 +16,12 @@ import type {
   ConnectorHealthResponse,
   AgentQueryInput,
   AgentQueryResult,
+  AgentRuntime,
+  AgentProviderActivateResult,
+  AgentProviderListResult,
+  AgentProviderTestResult,
+  AgentProviderUpsertInput,
+  AgentProviderUpsertResult,
   AgentSessionListResult,
   AgentSessionResult,
   AnalyticsOverview,
@@ -138,6 +144,28 @@ export const connectorsApi = {
 
 export const agentApi = {
   listSessions: () => request<AgentSessionListResult>("/agent/sessions"),
+  getRuntime: () => request<AgentRuntime>("/agent/runtime"),
+  listProviders: () => request<AgentProviderListResult>("/agent/providers"),
+  saveProvider: (input: AgentProviderUpsertInput) =>
+    request<AgentProviderUpsertResult>("/agent/providers", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  activateProvider: (id: string) =>
+    request<AgentProviderActivateResult>(`/agent/providers/${id}/activate`, {
+      method: "POST",
+    }),
+  removeProvider: async (id: string): Promise<void> => {
+    const res = await fetch(`${BASE}/agent/providers/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`API ${res.status}: ${body}`);
+    }
+  },
+  testProvider: (id: string) =>
+    request<AgentProviderTestResult>(`/agent/providers/${id}/test`, {
+      method: "POST",
+    }),
   query: (input: AgentQueryInput) =>
     request<AgentQueryResult>("/agent/query", {
       method: "POST",

@@ -4,9 +4,11 @@ import type {
   AgentMessage,
   AgentQueryInput,
   AgentQueryResult,
+  AgentRuntime,
   AgentSessionResult,
   ProjectResponse,
 } from "@starline/shared";
+import type { AgentLLMHandle } from "./llm/index.js";
 
 export class AgentError extends Error {
   constructor(
@@ -158,20 +160,99 @@ function buildAssistantResponse(input: {
   ].join("\n");
 }
 
+function buildLLMSystemPrompt(): string {
+  return [
+    "You are the StarLine local-first creator agent.",
+    "Use only the provided project, asset, and conversation context.",
+    "Do not invent local files, assets, or project details that were not provided.",
+    "Give practical next-step guidance for creative work.",
+  ].join(" ");
+}
+
+function buildLLMUserPrompt(input: {
+  query: string;
+  projectName: string | null;
+  projectDescription: string | null;
+  relatedAssets: AgentAssetReference[];
+  previousMessages: AgentMessage[];
+}): string {
+  const projectLine = input.projectName
+    ? `Project context: ${input.projectName}${input.projectDescription ? ` - ${input.projectDescription}` : ""}`
+    : "Project context: Global local library";
+  const assetSection = input.relatedAssets.length > 0
+    ? input.relatedAssets.map(formatAssetLine).join("\n")
+    : "- No directly related local assets found.";
+  const historySection = input.previousMessages.length > 0
+    ? input.previousMessages
+      .slice(-6)
+      .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+      .join("\n")
+    : "No previous conversation history.";
+
+  return [
+    `User query: ${input.query}`,
+    projectLine,
+    "Retrieved assets:",
+    assetSection,
+    "Recent conversation:",
+    historySection,
+    "Answer using the local context above.",
+  ].join("\n\n");
+}
+
 export function createAgentService(
   agentRepo: AgentRepository,
   projectRepo: ProjectRepository,
   assetRepo: AssetRepository,
   eventRepo?: EventRepository,
+  llmHandleOrResolver?: AgentLLMHandle | (() => AgentLLMHandle | undefined),
 ) {
+  const resolveLLMHandle = (): AgentLLMHandle | undefined => {
+    if (!llmHandleOrResolver) return undefined;
+    if (typeof llmHandleOrResolver === "function") {
+      return llmHandleOrResolver();
+    }
+    return llmHandleOrResolver;
+  };
+
   return {
+    getAgentRuntime(): AgentRuntime {
+      const llmHandle = resolveLLMHandle();
+      if (!llmHandle) {
+        return {
+          mode: "template",
+          vendor: null,
+          protocol: null,
+          model: null,
+        };
+      }
+
+      return {
+        mode: "llm",
+        vendor: llmHandle.config.vendor,
+        protocol: llmHandle.config.protocol,
+        model: llmHandle.config.model,
+      };
+    },
+
+    getLLMProviderStatus() {
+      const llmHandle = resolveLLMHandle();
+      if (!llmHandle) return null;
+
+      return {
+        vendor: llmHandle.config.vendor,
+        protocol: llmHandle.config.protocol,
+        model: llmHandle.config.model,
+      };
+    },
+
     listSessions() {
       return {
         sessions: agentRepo.listSessions(),
       };
     },
 
-    query(input: AgentQueryInput): AgentQueryResult {
+    async query(input: AgentQueryInput): Promise<AgentQueryResult> {
       const existingSession = input.sessionId ? agentRepo.getSessionById(input.sessionId) : undefined;
       if (input.sessionId && !existingSession) {
         throw new AgentError("Agent session not found", "SESSION_NOT_FOUND", { sessionId: input.sessionId });
@@ -199,7 +280,8 @@ export function createAgentService(
         title: buildSessionTitle(input.query),
       });
 
-      const previousAssistantReplyCount = agentRepo.listMessagesBySessionAndRole(session.id, "assistant").length;
+      const previousMessages = agentRepo.listMessagesBySession(session.id).map(toMessage);
+      const previousAssistantReplyCount = previousMessages.filter((message) => message.role === "assistant").length;
       let matchedAssets = listAgentAssets({
         assetRepo,
         projectRepo,
@@ -235,13 +317,61 @@ export function createAgentService(
         role: "user",
         content: input.query.trim(),
       });
-      const assistantContent = buildAssistantResponse({
+      const fallbackAssistantContent = buildAssistantResponse({
         query: input.query.trim(),
         projectName: agentVisibleProject?.name ?? null,
         projectDescription: agentVisibleProject?.description ?? null,
         relatedAssets,
         previousAssistantReplyCount,
       });
+      let assistantContent = fallbackAssistantContent;
+      let agentRuntime: AgentRuntime = {
+        mode: "template",
+        vendor: null,
+        protocol: null,
+        model: null,
+      };
+
+      const llmHandle = resolveLLMHandle();
+      if (llmHandle) {
+        try {
+          const llmResponse = await llmHandle.provider.generate({
+            systemPrompt: buildLLMSystemPrompt(),
+            messages: [
+              {
+                role: "user",
+                content: buildLLMUserPrompt({
+                  query: input.query.trim(),
+                  projectName: agentVisibleProject?.name ?? null,
+                  projectDescription: agentVisibleProject?.description ?? null,
+                  relatedAssets,
+                  previousMessages,
+                }),
+              },
+            ],
+            temperature: llmHandle.config.temperature,
+            maxOutputTokens: llmHandle.config.maxOutputTokens,
+            metadata: {
+              sessionId: session.id,
+              projectId: effectiveProjectId ?? "",
+            },
+          }, llmHandle.config);
+          assistantContent = llmResponse.content;
+          agentRuntime = {
+            mode: "llm",
+            vendor: llmHandle.config.vendor,
+            protocol: llmResponse.protocol,
+            model: llmResponse.model,
+          };
+        } catch {
+          agentRuntime = {
+            mode: "template",
+            vendor: llmHandle.config.vendor,
+            protocol: llmHandle.config.protocol,
+            model: llmHandle.config.model,
+          };
+        }
+      }
       const assistantMessageRow = agentRepo.createMessage({
         sessionId: session.id,
         role: "assistant",
@@ -270,6 +400,7 @@ export function createAgentService(
         assistantMessage: toMessage(assistantMessageRow),
         relatedAssets,
         project: agentVisibleProject ? toProjectResponse(agentVisibleProject) : null,
+        agentRuntime,
       };
     },
 
@@ -301,6 +432,7 @@ export function createAgentService(
         messages,
         relatedAssets,
         project: agentVisibleProject ? toProjectResponse(agentVisibleProject) : null,
+        agentRuntime: this.getAgentRuntime(),
       };
     },
   };

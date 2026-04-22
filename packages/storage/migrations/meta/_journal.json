@@ -92,6 +92,20 @@
       "when": 1776687769676,
       "tag": "0012_sudden_jamie_braddock",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1776785600000,
+      "tag": "0013_fair_lorna_dane",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1776790200000,
+      "tag": "0014_breezy_starbrand",
+      "breakpoints": true
     }
   ]
 }

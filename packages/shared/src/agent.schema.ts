@@ -47,12 +47,21 @@ export const AgentSessionListResultSchema = z.object({
 });
 export type AgentSessionListResult = z.infer<typeof AgentSessionListResultSchema>;
 
+export const AgentRuntimeSchema = z.object({
+  mode: z.enum(["template", "llm"]),
+  vendor: z.string().nullable(),
+  protocol: z.string().nullable(),
+  model: z.string().nullable(),
+});
+export type AgentRuntime = z.infer<typeof AgentRuntimeSchema>;
+
 export const AgentQueryResultSchema = z.object({
   session: AgentSessionSchema,
   userMessage: AgentMessageSchema,
   assistantMessage: AgentMessageSchema,
   relatedAssets: z.array(AgentAssetReferenceSchema),
   project: ProjectResponseSchema.nullable(),
+  agentRuntime: AgentRuntimeSchema,
 });
 export type AgentQueryResult = z.infer<typeof AgentQueryResultSchema>;
 
@@ -61,5 +70,6 @@ export const AgentSessionResultSchema = z.object({
   messages: z.array(AgentMessageSchema),
   relatedAssets: z.array(AgentAssetReferenceSchema),
   project: ProjectResponseSchema.nullable(),
+  agentRuntime: AgentRuntimeSchema,
 });
 export type AgentSessionResult = z.infer<typeof AgentSessionResultSchema>;

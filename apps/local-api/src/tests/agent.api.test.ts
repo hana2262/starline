@@ -74,6 +74,7 @@ describe("Agent API", () => {
       assistantMessage: { role: string; relatedAssetIds: string[]; content: string };
       relatedAssets: Array<{ id: string; name: string; type: string }>;
       project: { id: string; name: string } | null;
+      agentRuntime: { mode: string; vendor: string | null; protocol: string | null; model: string | null };
     }>();
     expect(queryBody.session.projectId).toBe(projectId);
     expect(queryBody.userMessage.role).toBe("user");
@@ -84,8 +85,13 @@ describe("Agent API", () => {
       id: projectId,
       name: "Campaign Planner",
     });
-    expect(queryBody.assistantMessage.content).toContain("Campaign Planner");
-    expect(queryBody.assistantMessage.content).toContain("launch-prompt.txt");
+    expect(queryBody.agentRuntime).toEqual({
+      mode: "llm",
+      vendor: "mock",
+      protocol: "mock",
+      model: "mock-agent-v1",
+    });
+    expect(queryBody.assistantMessage.content).toContain("Help me refine the neon astronaut poster direction");
 
     const sessionRes = await app.inject({
       method: "GET",
@@ -96,10 +102,12 @@ describe("Agent API", () => {
       session: { id: string };
       messages: Array<{ role: string }>;
       relatedAssets: Array<{ id: string }>;
+      agentRuntime: { mode: string; vendor: string | null; protocol: string | null; model: string | null };
     }>();
     expect(sessionBody.session.id).toBe(queryBody.session.id);
     expect(sessionBody.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(sessionBody.relatedAssets).toHaveLength(1);
+    expect(sessionBody.agentRuntime.mode).toBe("llm");
   });
 
   it("filters private assets and private projects out of default agent retrieval", async () => {

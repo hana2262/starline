@@ -30,3 +30,11 @@ export function useAgentQuery() {
     mutationFn: (input: AgentQueryInput) => agentApi.query(input),
   });
 }
+
+export function useAgentRuntime(enabled = true) {
+  return useQuery({
+    queryKey: ["agent", "runtime"],
+    queryFn: () => agentApi.getRuntime(),
+    enabled,
+  });
+}

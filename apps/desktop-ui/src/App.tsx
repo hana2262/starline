@@ -6,6 +6,7 @@ import AssetDetailPage from "./pages/AssetDetailPage.js";
 import ConnectorsPage from "./pages/ConnectorsPage.js";
 import AgentPage from "./pages/AgentPage.js";
 import AgentSessionsPage from "./pages/AgentSessionsPage.js";
+import AgentProvidersPage from "./pages/AgentProvidersPage.js";
 import AnalyticsPage from "./pages/AnalyticsPage.js";
 import AppNav from "./components/AppNav.js";
 import { useProjects } from "./hooks/useProjects.js";
@@ -14,7 +15,7 @@ import { useAsset } from "./hooks/useAsset.js";
 import { useI18n } from "./lib/i18n.js";
 import { HEALTH_URL } from "./lib/runtime.js";
 
-type RootView = "projects" | "assets" | "connectors" | "agent" | "agent-sessions" | "analytics" | "project-detail" | "asset-detail";
+type RootView = "projects" | "assets" | "connectors" | "agent" | "agent-sessions" | "agent-providers" | "analytics" | "project-detail" | "asset-detail";
 type BootStatus = "checking" | "ready" | "failed";
 type AssetBackView = "assets" | "project-detail";
 type AssetBrowserStatus = "active" | "trashed" | "all";
@@ -128,6 +129,7 @@ export default function App() {
           sessionId={selectedAgentSessionId}
           onSessionChange={setSelectedAgentSessionId}
           onOpenHistory={() => setView("agent-sessions")}
+          onOpenProviders={() => setView("agent-providers")}
         />
       );
     }
@@ -143,6 +145,15 @@ export default function App() {
             setSelectedAgentSessionId(sessionId);
             setView("agent");
           }}
+        />
+      );
+    }
+
+    if (view === "agent-providers") {
+      return (
+        <AgentProvidersPage
+          apiReady={apiReady}
+          onBack={() => setView("agent")}
         />
       );
     }

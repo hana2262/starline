@@ -3,5 +3,6 @@ export * from "./asset.schema.js";
 export * from "./asset-list.schema.js";
 export * from "./generation.schema.js";
 export * from "./connector-config.schema.js";
+export * from "./agent-provider.schema.js";
 export * from "./agent.schema.js";
 export * from "./analytics.schema.js";

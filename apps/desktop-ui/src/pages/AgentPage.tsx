@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AgentAssetReference, AgentSessionResult, ProjectResponse } from "@starline/shared";
-import { useAgentQuery, useAgentSession } from "../hooks/useAgent.js";
+import type { AgentAssetReference, AgentRuntime, AgentSessionResult, ProjectResponse } from "@starline/shared";
+import { useAgentQuery, useAgentRuntime, useAgentSession } from "../hooks/useAgent.js";
 import { useI18n } from "../lib/i18n.js";
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
   sessionId: string | null;
   onSessionChange: (sessionId: string | null) => void;
   onOpenHistory: () => void;
+  onOpenProviders: () => void;
 }
 
 function transcriptTone(role: "user" | "assistant"): string {
@@ -30,12 +31,28 @@ function mergeRelatedAssets(existing: AgentAssetReference[], incoming: AgentAsse
   return merged;
 }
 
+function runtimeBadgeTone(runtime: AgentRuntime): string {
+  return runtime.mode === "llm"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+    : "border-amber-200 bg-amber-50 text-amber-800";
+}
+
+function defaultAgentRuntime(): AgentRuntime {
+  return {
+    mode: "llm",
+    vendor: "mock",
+    protocol: "mock",
+    model: "mock-agent-v1",
+  };
+}
+
 export default function AgentPage({
   apiReady,
   projects,
   sessionId,
   onSessionChange,
   onOpenHistory,
+  onOpenProviders,
 }: Props) {
   const { locale, text, formatAssetType } = useI18n();
   const [draft, setDraft] = useState("");
@@ -44,6 +61,7 @@ export default function AgentPage({
   const [lastSnapshot, setLastSnapshot] = useState<AgentSessionResult | null>(null);
 
   const session = useAgentSession(sessionId, apiReady);
+  const runtime = useAgentRuntime(apiReady);
   const sendQuery = useAgentQuery();
 
   useEffect(() => {
@@ -81,6 +99,7 @@ export default function AgentPage({
           messages: [...current.messages, result.userMessage, result.assistantMessage],
           relatedAssets: mergeRelatedAssets(current.relatedAssets, result.relatedAssets),
           project: result.project,
+          agentRuntime: result.agentRuntime,
         };
       }
 
@@ -89,6 +108,7 @@ export default function AgentPage({
         messages: [result.userMessage, result.assistantMessage],
         relatedAssets: result.relatedAssets,
         project: result.project,
+        agentRuntime: result.agentRuntime,
       };
     });
   }
@@ -102,11 +122,19 @@ export default function AgentPage({
 
   const messages = effectiveSnapshot?.messages ?? [];
   const relatedAssets = effectiveSnapshot?.relatedAssets ?? [];
+  const agentRuntime: AgentRuntime = effectiveSnapshot?.agentRuntime ?? runtime.data ?? defaultAgentRuntime();
 
   const copy = {
     history: locale === "zh-CN" ? "查看历史会话" : "Open history",
     send: locale === "zh-CN" ? "发送给 Agent" : "Send to Agent",
     sessionCode: locale === "zh-CN" ? "当前会话" : "Session",
+    runtime: locale === "zh-CN" ? "Agent 运行状态" : "Agent runtime",
+    runtimeLLM: locale === "zh-CN" ? "当前回复由 LLM Provider 生成" : "Replies are generated through the LLM provider.",
+    runtimeTemplate: locale === "zh-CN" ? "当前回退到模板化回复" : "Currently running in template fallback mode.",
+    vendorLabel: locale === "zh-CN" ? "Vendor" : "Vendor",
+    protocolLabel: locale === "zh-CN" ? "Protocol" : "Protocol",
+    modelLabel: locale === "zh-CN" ? "Model" : "Model",
+    unavailable: locale === "zh-CN" ? "未配置" : "Unavailable",
   };
 
   return (
@@ -128,6 +156,12 @@ export default function AgentPage({
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             {copy.history}
+          </button>
+          <button
+            onClick={onOpenProviders}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            {locale === "zh-CN" ? "Provider 设置" : "Provider settings"}
           </button>
           <button
             onClick={startNewSession}
@@ -231,6 +265,25 @@ export default function AgentPage({
               ? text.agentPrivateAccessEnabledHint
               : text.agentPrivateAccessDisabledHint}
           </p>
+
+          <div className={`mt-4 rounded-2xl border px-4 py-4 ${runtimeBadgeTone(agentRuntime)}`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-70">{copy.runtime}</p>
+                <p className="mt-2 text-sm font-medium">
+                  {agentRuntime.mode === "llm" ? copy.runtimeLLM : copy.runtimeTemplate}
+                </p>
+              </div>
+              <dl className="grid min-w-[220px] grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <dt className="opacity-70">{copy.vendorLabel}</dt>
+                <dd className="text-right font-medium">{agentRuntime.vendor ?? copy.unavailable}</dd>
+                <dt className="opacity-70">{copy.protocolLabel}</dt>
+                <dd className="text-right font-medium">{agentRuntime.protocol ?? copy.unavailable}</dd>
+                <dt className="opacity-70">{copy.modelLabel}</dt>
+                <dd className="text-right font-medium">{agentRuntime.model ?? copy.unavailable}</dd>
+              </dl>
+            </div>
+          </div>
 
           <div className="mt-6 space-y-4">
             {session.isLoading && sessionId && (
