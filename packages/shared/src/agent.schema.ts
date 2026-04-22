@@ -55,6 +55,11 @@ export const AgentRuntimeSchema = z.object({
 });
 export type AgentRuntime = z.infer<typeof AgentRuntimeSchema>;
 
+export const AgentToolUsageSchema = z.object({
+  name: z.string(),
+});
+export type AgentToolUsage = z.infer<typeof AgentToolUsageSchema>;
+
 export const AgentQueryResultSchema = z.object({
   session: AgentSessionSchema,
   userMessage: AgentMessageSchema,
@@ -62,6 +67,7 @@ export const AgentQueryResultSchema = z.object({
   relatedAssets: z.array(AgentAssetReferenceSchema),
   project: ProjectResponseSchema.nullable(),
   agentRuntime: AgentRuntimeSchema,
+  toolUsage: z.array(AgentToolUsageSchema).default([]),
 });
 export type AgentQueryResult = z.infer<typeof AgentQueryResultSchema>;
 

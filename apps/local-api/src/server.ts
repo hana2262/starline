@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import type { FastifyBaseLogger } from "fastify";
 import path from "path";
 import { getDb, getSqlite, createProjectRepository, createAssetRepository, createGenerationRepository, createConnectorConfigRepository, createConnectorSecretRepository, createAgentRepository, createEventRepository, createAgentProviderConfigRepository, createAgentProviderSecretRepository } from "@starline/storage";
-import { createProjectService, createAssetService, AssetImportError, AssetDeleteError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError, createAgentService, AgentError, createAnalyticsService, AnalyticsError, createDefaultLLMProviderRegistry, createAgentProviderService, AgentProviderConfigError } from "@starline/domain";
+import { createProjectService, createAssetService, AssetImportError, AssetDeleteError, computeFileHash, createGenerationService, ConnectorError, GenerationRetryError, GenerationCancelError, GenerationListError, createConnectorConfigService, ConnectorConfigError, createAgentService, AgentError, createAnalyticsService, AnalyticsError, createDefaultLLMProviderRegistry, createAgentProviderService, AgentProviderConfigError, createDefaultAgentToolRegistry } from "@starline/domain";
 import type { LLMProviderConfig } from "@starline/domain";
 import { MockConnector } from "@starline/connectors";
 import type { Connector } from "@starline/connectors";
@@ -185,6 +185,7 @@ export function buildServer(
     { retryBaseMs: options?.retryBaseMs, concurrency: generationConcurrency, logger: app.log, eventRepo },
   );
   const llmRegistry = createDefaultLLMProviderRegistry();
+  const toolRegistry = createDefaultAgentToolRegistry();
   const agentProviderService = createAgentProviderService(agentProviderConfigRepo, agentProviderSecretRepo, llmRegistry);
   const fallbackLLMConfig: LLMProviderConfig = {
     vendor: "mock",
@@ -205,7 +206,7 @@ export function buildServer(
     }
 
     return llmRegistry.create(fallbackLLMConfig);
-  });
+  }, toolRegistry);
   const activeProvider = agentProviderService.resolveActiveHandle();
   if (activeProvider) {
     app.log.info({

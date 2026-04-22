@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AgentAssetReference, AgentRuntime, AgentSessionResult, ProjectResponse } from "@starline/shared";
+import type { AgentAssetReference, AgentRuntime, AgentSessionResult, AgentToolUsage, ProjectResponse } from "@starline/shared";
 import { useAgentQuery, useAgentRuntime, useAgentSession } from "../hooks/useAgent.js";
 import { useI18n } from "../lib/i18n.js";
 
@@ -59,6 +59,7 @@ export default function AgentPage({
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [allowPrivateForThisQuery, setAllowPrivateForThisQuery] = useState(false);
   const [lastSnapshot, setLastSnapshot] = useState<AgentSessionResult | null>(null);
+  const [lastToolUsage, setLastToolUsage] = useState<AgentToolUsage[]>([]);
 
   const session = useAgentSession(sessionId, apiReady);
   const runtime = useAgentRuntime(apiReady);
@@ -67,6 +68,7 @@ export default function AgentPage({
   useEffect(() => {
     if (session.data) {
       setLastSnapshot(session.data);
+      setLastToolUsage([]);
       if (session.data.session.projectId) {
         setSelectedProjectId(session.data.session.projectId);
       }
@@ -92,6 +94,7 @@ export default function AgentPage({
     setDraft("");
     onSessionChange(result.session.id);
     setSelectedProjectId(result.session.projectId ?? selectedProjectId);
+    setLastToolUsage(result.toolUsage);
     setLastSnapshot((current) => {
       if (current && current.session.id === result.session.id) {
         return {
@@ -118,6 +121,7 @@ export default function AgentPage({
     setDraft("");
     setAllowPrivateForThisQuery(false);
     setLastSnapshot(null);
+    setLastToolUsage([]);
   }
 
   const messages = effectiveSnapshot?.messages ?? [];
@@ -136,6 +140,8 @@ export default function AgentPage({
     modelLabel: locale === "zh-CN" ? "Model" : "Model",
     unavailable: locale === "zh-CN" ? "未配置" : "Unavailable",
   };
+  const toolUsageLabel = locale === "zh-CN" ? "已使用工具" : "Tools used";
+  const noToolsUsed = locale === "zh-CN" ? "本次回复未调用工具" : "No tools used for this reply.";
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -282,6 +288,23 @@ export default function AgentPage({
                 <dt className="opacity-70">{copy.modelLabel}</dt>
                 <dd className="text-right font-medium">{agentRuntime.model ?? copy.unavailable}</dd>
               </dl>
+            </div>
+            <div className="mt-4 border-t border-current/15 pt-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-70">{toolUsageLabel}</p>
+              {lastToolUsage.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {lastToolUsage.map((tool) => (
+                    <span
+                      key={tool.name}
+                      className="rounded-full border border-current/20 bg-white/70 px-3 py-1 text-xs font-medium"
+                    >
+                      {tool.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm opacity-80">{noToolsUsed}</p>
+              )}
             </div>
           </div>
 

@@ -33,9 +33,26 @@ export type LLMProtocolId =
   | "gemini"
   | "bedrock";
 
+export interface LLMToolDefinition {
+  name: string;
+  description: string;
+}
+
+export interface LLMToolCall {
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export interface LLMToolResult {
+  name: string;
+  result: unknown;
+}
+
 export interface LLMGenerateRequest {
   systemPrompt: string;
   messages: LLMMessage[];
+  tools?: LLMToolDefinition[];
+  toolResults?: LLMToolResult[];
   temperature?: number;
   maxOutputTokens?: number;
   metadata?: Record<string, string>;
@@ -46,6 +63,7 @@ export interface LLMGenerateResponse {
   model: string;
   protocol: LLMProtocolId;
   finishReason: LLMFinishReason;
+  toolCall?: LLMToolCall;
   usage?: LLMUsage;
 }
 

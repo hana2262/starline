@@ -297,4 +297,37 @@ describe("Agent API", () => {
     expect(body.sessions[0]?.id).toBe(secondSessionId);
     expect(body.sessions.some((session) => session.id === firstSessionId)).toBe(true);
   });
+
+  it("records tool usage when the mock provider triggers a tool-assisted asset query", async () => {
+    const promptFile = createTempFile("tool-asset.txt", "tool test asset");
+    const importRes = await app.inject({
+      method: "POST",
+      url: "/api/assets/import",
+      payload: {
+        filePath: promptFile,
+        type: "prompt",
+        tags: ["tool-test"],
+        description: "Tool-assisted asset lookup target",
+      },
+    });
+    expect(importRes.statusCode).toBe(201);
+
+    const queryRes = await app.inject({
+      method: "POST",
+      url: "/api/agent/query",
+      payload: {
+        query: "本地有哪些资产",
+      },
+    });
+
+    expect(queryRes.statusCode).toBe(200);
+    const queryBody = queryRes.json<{
+      assistantMessage: { content: string };
+      toolUsage: Array<{ name: string }>;
+      agentRuntime: { mode: string };
+    }>();
+    expect(queryBody.agentRuntime.mode).toBe("llm");
+    expect(queryBody.toolUsage).toEqual([{ name: "search_assets" }]);
+    expect(queryBody.assistantMessage.content).toContain("Tool used: search_assets");
+  });
 });

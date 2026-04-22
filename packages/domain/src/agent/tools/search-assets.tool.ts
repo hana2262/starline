@@ -27,7 +27,7 @@ export function createSearchAssetsTool(): AgentToolDefinition<
       const effectiveProjectId = input.projectId ?? context.projectId;
       const requestedLimit = input.limit ?? 5;
       const page = context.assetRepo.list({
-        query: input.query,
+        query: input.query === "*" ? undefined : input.query,
         projectId: effectiveProjectId,
         type: input.type,
         status: "active",

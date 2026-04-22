@@ -6,10 +6,12 @@ import type {
   AgentQueryResult,
   AgentRuntime,
   AgentSessionResult,
+  AgentToolUsage,
   ProjectResponse,
 } from "@starline/shared";
 import type { AgentLLMHandle } from "./llm/index.js";
-import type { AgentToolRegistry } from "./tools/index.js";
+import type { LLMGenerateRequest } from "./llm/index.js";
+import { createAgentToolContext, type AgentToolRegistry } from "./tools/index.js";
 
 export class AgentError extends Error {
   constructor(
@@ -201,6 +203,10 @@ function buildLLMUserPrompt(input: {
   ].join("\n\n");
 }
 
+function toToolUsage(name: string): AgentToolUsage {
+  return { name };
+}
+
 export function createAgentService(
   agentRepo: AgentRepository,
   projectRepo: ProjectRepository,
@@ -337,11 +343,12 @@ export function createAgentService(
         protocol: null,
         model: null,
       };
+      let toolUsage: AgentToolUsage[] = [];
 
       const llmHandle = resolveLLMHandle();
       if (llmHandle) {
         try {
-          const llmResponse = await llmHandle.provider.generate({
+          const llmRequest: LLMGenerateRequest = {
             systemPrompt: buildLLMSystemPrompt(),
             messages: [
               {
@@ -355,19 +362,47 @@ export function createAgentService(
                 }),
               },
             ],
+            tools: toolRegistry?.listDefinitions().map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+            })),
             temperature: llmHandle.config.temperature,
             maxOutputTokens: llmHandle.config.maxOutputTokens,
             metadata: {
               sessionId: session.id,
               projectId: effectiveProjectId ?? "",
             },
-          }, llmHandle.config);
-          assistantContent = llmResponse.content;
+          };
+          const llmResponse = await llmHandle.provider.generate(llmRequest, llmHandle.config);
+          let finalResponse = llmResponse;
+
+          if (llmResponse.toolCall && toolRegistry) {
+            const toolResult = await toolRegistry.execute(
+              llmResponse.toolCall.name as Parameters<AgentToolRegistry["execute"]>[0],
+              llmResponse.toolCall.input,
+              createAgentToolContext({
+                projectRepo,
+                assetRepo,
+                projectId: agentVisibleProject ? effectiveProjectId ?? undefined : undefined,
+                allowPrivate: allowPrivateForThisQuery,
+              }),
+            );
+            toolUsage = [toToolUsage(llmResponse.toolCall.name)];
+            finalResponse = await llmHandle.provider.generate({
+              ...llmRequest,
+              toolResults: [{
+                name: llmResponse.toolCall.name,
+                result: toolResult,
+              }],
+            }, llmHandle.config);
+          }
+
+          assistantContent = finalResponse.content;
           agentRuntime = {
             mode: "llm",
             vendor: llmHandle.config.vendor,
-            protocol: llmResponse.protocol,
-            model: llmResponse.model,
+            protocol: finalResponse.protocol,
+            model: finalResponse.model,
           };
         } catch {
           agentRuntime = {
@@ -407,6 +442,7 @@ export function createAgentService(
         relatedAssets,
         project: agentVisibleProject ? toProjectResponse(agentVisibleProject) : null,
         agentRuntime,
+        toolUsage,
       };
     },
 
