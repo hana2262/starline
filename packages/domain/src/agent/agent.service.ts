@@ -9,6 +9,7 @@ import type {
   ProjectResponse,
 } from "@starline/shared";
 import type { AgentLLMHandle } from "./llm/index.js";
+import type { AgentToolRegistry } from "./tools/index.js";
 
 export class AgentError extends Error {
   constructor(
@@ -206,6 +207,7 @@ export function createAgentService(
   assetRepo: AssetRepository,
   eventRepo?: EventRepository,
   llmHandleOrResolver?: AgentLLMHandle | (() => AgentLLMHandle | undefined),
+  toolRegistry?: AgentToolRegistry,
 ) {
   const resolveLLMHandle = (): AgentLLMHandle | undefined => {
     if (!llmHandleOrResolver) return undefined;
@@ -244,6 +246,10 @@ export function createAgentService(
         protocol: llmHandle.config.protocol,
         model: llmHandle.config.model,
       };
+    },
+
+    listAvailableTools() {
+      return toolRegistry?.listDefinitions() ?? [];
     },
 
     listSessions() {

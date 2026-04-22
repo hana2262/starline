@@ -12,7 +12,8 @@
   "dependencies": {
     "@starline/connectors": "workspace:*",
     "@starline/shared": "workspace:*",
-    "@starline/storage": "workspace:*"
+    "@starline/storage": "workspace:*",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "typescript": "^5.4.5",
