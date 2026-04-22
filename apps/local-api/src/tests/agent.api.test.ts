@@ -330,4 +330,22 @@ describe("Agent API", () => {
     expect(queryBody.toolUsage).toEqual([{ name: "search_assets" }]);
     expect(queryBody.assistantMessage.content).toContain("Tool used: search_assets");
   });
+
+  it("streams agent query results over text/event-stream", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/agent/query/stream",
+      payload: {
+        query: "stream this answer",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(res.body).toContain("event: ack");
+    expect(res.body).toContain("event: metadata");
+    expect(res.body).toContain("event: assistant_delta");
+    expect(res.body).toContain("event: done");
+    expect(res.body).toContain("stream this answer");
+  });
 });

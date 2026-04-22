@@ -5,6 +5,10 @@ export interface MockLLMProviderOptions {
   responseText?: string;
 }
 
+function hasAnyIntent(haystack: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => haystack.includes(pattern));
+}
+
 export class MockLLMProvider implements LLMProvider {
   readonly id = "mock" as const;
 
@@ -13,6 +17,7 @@ export class MockLLMProvider implements LLMProvider {
   async generate(request: LLMGenerateRequest, config: LLMProviderConfig): Promise<LLMGenerateResponse> {
     const lastUserMessage = [...request.messages].reverse().find((message) => message.role === "user");
     const prompt = lastUserMessage?.content ?? request.systemPrompt;
+    const normalizedPrompt = prompt.toLowerCase();
 
     if (request.toolResults && request.toolResults.length > 0) {
       const [toolResult] = request.toolResults;
@@ -35,16 +40,20 @@ export class MockLLMProvider implements LLMProvider {
       };
     }
 
-    const normalizedPrompt = prompt.toLowerCase();
     const availableToolNames = new Set((request.tools ?? []).map((tool) => tool.name));
 
     if (
       availableToolNames.has("search_assets")
-      && (
-        normalizedPrompt.includes("哪些资产")
-        || normalizedPrompt.includes("本地有哪些资产")
-        || normalizedPrompt.includes("列出资产")
-      )
+      && hasAnyIntent(normalizedPrompt, [
+        "资产",
+        "素材",
+        "本地有哪些",
+        "当前项目有哪些",
+        "项目里有哪些",
+        "asset",
+        "assets",
+        "local library",
+      ])
     ) {
       return {
         content: "",
@@ -68,7 +77,7 @@ export class MockLLMProvider implements LLMProvider {
 
     if (
       availableToolNames.has("list_projects")
-      && (normalizedPrompt.includes("哪些项目") || normalizedPrompt.includes("列出项目"))
+      && hasAnyIntent(normalizedPrompt, ["项目", "project", "projects"])
     ) {
       return {
         content: "",
@@ -100,5 +109,21 @@ export class MockLLMProvider implements LLMProvider {
         totalTokens: request.messages.length + 1,
       },
     };
+  }
+
+  async stream(
+    request: LLMGenerateRequest,
+    config: LLMProviderConfig,
+    onChunk: (chunk: { delta: string }) => void,
+  ): Promise<LLMGenerateResponse> {
+    const response = await this.generate(request, config);
+    const content = response.content;
+    const chunkSize = 24;
+
+    for (let index = 0; index < content.length; index += chunkSize) {
+      onChunk({ delta: content.slice(index, index + chunkSize) });
+    }
+
+    return response;
   }
 }

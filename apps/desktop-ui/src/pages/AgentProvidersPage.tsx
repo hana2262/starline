@@ -568,26 +568,6 @@ export default function AgentProvidersPage({ apiReady, onBack }: Props) {
               />
             </label>
 
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">{copy.temperature}</span>
-              <input
-                value={draft.temperature}
-                onChange={(event) => setDraft((current) => ({ ...current, temperature: event.target.value }))}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
-                placeholder="0.2"
-              />
-            </label>
-
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">{copy.maxOutputTokens}</span>
-              <input
-                value={draft.maxOutputTokens}
-                onChange={(event) => setDraft((current) => ({ ...current, maxOutputTokens: event.target.value }))}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
-                placeholder="512"
-              />
-            </label>
-
             <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 md:col-span-2">
               <input
                 type="checkbox"

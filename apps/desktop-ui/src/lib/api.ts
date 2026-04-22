@@ -16,6 +16,7 @@ import type {
   ConnectorHealthResponse,
   AgentQueryInput,
   AgentQueryResult,
+  AgentMessage,
   AgentRuntime,
   AgentProviderActivateResult,
   AgentProviderListResult,
@@ -31,6 +32,21 @@ import type {
 import { API_BASE } from "./runtime.js";
 
 const BASE = API_BASE;
+
+export interface AgentQueryStreamHandlers {
+  onAck?: () => void;
+  onMetadata?: (payload: {
+    session: AgentQueryResult["session"];
+    userMessage: AgentMessage;
+    relatedAssets: AgentQueryResult["relatedAssets"];
+    project: AgentQueryResult["project"];
+    agentRuntime: AgentQueryResult["agentRuntime"];
+    toolUsage: AgentQueryResult["toolUsage"];
+  }) => void;
+  onAssistantDelta?: (delta: string) => void;
+  onDone?: (payload: AgentQueryResult) => void;
+  onError?: (message: string) => void;
+}
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -171,6 +187,82 @@ export const agentApi = {
       method: "POST",
       body: JSON.stringify(input),
     }),
+  queryStream: async (input: AgentQueryInput, handlers: AgentQueryStreamHandlers): Promise<void> => {
+    const res = await fetch(`${BASE}/agent/query/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify(input),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`API ${res.status}: ${body}`);
+    }
+
+    if (!res.body) {
+      throw new Error("Streaming response body is unavailable");
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      let separatorIndex = buffer.indexOf("\n\n");
+      while (separatorIndex >= 0) {
+        const rawEvent = buffer.slice(0, separatorIndex);
+        buffer = buffer.slice(separatorIndex + 2);
+
+        const lines = rawEvent.split("\n");
+        let eventName = "message";
+        const dataLines: string[] = [];
+
+        for (const line of lines) {
+          if (line.startsWith("event:")) {
+            eventName = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
+            dataLines.push(line.slice(5).trim());
+          }
+        }
+
+        const dataText = dataLines.join("\n");
+        if (!dataText) {
+          separatorIndex = buffer.indexOf("\n\n");
+          continue;
+        }
+
+        switch (eventName) {
+          case "ack":
+            handlers.onAck?.();
+            break;
+          case "metadata":
+            handlers.onMetadata?.(JSON.parse(dataText) as Parameters<NonNullable<AgentQueryStreamHandlers["onMetadata"]>>[0]);
+            break;
+          case "assistant_delta":
+            handlers.onAssistantDelta?.(JSON.parse(dataText).delta as string);
+            break;
+          case "done":
+            handlers.onDone?.(JSON.parse(dataText) as AgentQueryResult);
+            break;
+          case "error":
+            handlers.onError?.(JSON.parse(dataText).message as string);
+            break;
+          default:
+            break;
+        }
+
+        separatorIndex = buffer.indexOf("\n\n");
+      }
+    }
+  },
   getSession: (id: string) => request<AgentSessionResult>(`/agent/sessions/${id}`),
 };
 

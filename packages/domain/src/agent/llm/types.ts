@@ -67,6 +67,10 @@ export interface LLMGenerateResponse {
   usage?: LLMUsage;
 }
 
+export interface LLMStreamChunk {
+  delta: string;
+}
+
 export interface LLMProviderConfig {
   vendor: LLMVendorId;
   protocol: LLMProtocolId;
